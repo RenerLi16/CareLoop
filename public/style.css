@@ -806,3 +806,356 @@ hr {
 .setup button[type="submit"] {
   margin-top: 16px;
 }
+
+/* Bedside interactions: large targets and a separate management path. */
+[hidden] {
+  display: none !important;
+}
+.nav-item,
+.primary,
+.secondary,
+.danger-button {
+  min-height: 48px;
+}
+.nav-item {
+  align-items: center;
+}
+.bedside-view {
+  max-width: 1100px;
+}
+.bedside-focus {
+  background: #edf3e6;
+  border-color: #d4e0c9;
+  padding: 32px;
+}
+.focus-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 18px;
+}
+.focus-time {
+  color: #175647;
+  font-size: clamp(38px, 5vw, 60px);
+  line-height: 1.1;
+  font-weight: 500;
+  letter-spacing: -1.8px;
+  margin: 25px 0 15px;
+  font-variant-numeric: tabular-nums;
+}
+.bedside-focus h2 {
+  font-size: 27px;
+  line-height: 1.3;
+  margin-bottom: 10px;
+}
+.bedside-focus p {
+  margin-bottom: 12px;
+}
+.focus-hint {
+  max-width: 650px;
+  font-size: 14px;
+  color: #536c5d;
+}
+.bedside-button {
+  min-height: 58px;
+  font-size: 17px;
+  padding: 15px 24px;
+}
+.bedside-focus .bedside-button {
+  margin: 10px 0 12px;
+  min-width: 240px;
+}
+.bedside-progress {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: white;
+  padding: 22px 12px;
+  margin-bottom: 24px;
+}
+.bedside-progress > div {
+  text-align: center;
+  border-right: 1px solid var(--line);
+}
+.bedside-progress > div:last-child {
+  border: 0;
+}
+.bedside-progress strong {
+  display: block;
+  font-size: 30px;
+  font-weight: 500;
+}
+.bedside-progress span {
+  font-size: 13px;
+  color: #62746a;
+}
+.bedside-task {
+  gap: 18px;
+  padding: 24px 0;
+}
+.bedside-task .time {
+  width: 100px;
+  font-size: 19px;
+}
+.bedside-task .task-detail b {
+  font-size: 17px;
+  line-height: 1.5;
+}
+.bedside-task .task-detail small {
+  font-size: 13px;
+}
+.bedside-task .secondary {
+  font-size: 15px;
+  padding: 12px 18px;
+}
+.recorded-today {
+  padding: 24px;
+  background: white;
+}
+.recorded-today > summary {
+  font-size: 17px;
+}
+.recorded-today .task:first-of-type {
+  margin-top: 20px;
+}
+.earlier-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 20px 24px;
+  margin-bottom: 24px;
+  background: #fff6e7;
+  border: 1px solid #eadac1;
+  border-radius: 12px;
+}
+.earlier-notice b {
+  font-size: 15px;
+}
+.earlier-notice p {
+  font-size: 13px;
+  margin: 6px 0 0;
+  color: #7c694a;
+}
+.earlier-notice .secondary {
+  flex-shrink: 0;
+}
+.manage-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin-bottom: 30px;
+}
+.manage-breadcrumb span {
+  font-size: 12px;
+  color: var(--muted);
+}
+.manage-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(225px, 1fr));
+  gap: 20px;
+}
+.manage-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+.manage-card p {
+  color: var(--muted);
+  font-size: 14px;
+  flex: 1;
+}
+.manage-icon {
+  display: block;
+  color: var(--green);
+  font-size: 30px;
+  margin-bottom: 20px;
+}
+.manage-card .primary {
+  width: 100%;
+}
+.record-filters {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 15px;
+  margin-bottom: 20px;
+}
+.record-filters label {
+  flex: 1;
+  min-width: 180px;
+  margin: 0;
+}
+.record-filters .secondary {
+  min-height: 44px;
+}
+#task-dialog {
+  max-width: 640px;
+  padding: 32px;
+}
+#task-dialog h2 {
+  margin: 15px 0 10px;
+  font-size: 25px;
+  line-height: 1.4;
+}
+#task-dialog label {
+  font-size: 15px;
+}
+#task-dialog input:not([type="radio"]),
+#task-dialog select {
+  min-height: 49px;
+  font-size: 16px;
+}
+#task-dialog textarea {
+  font-size: 16px;
+}
+#task-dialog .muted {
+  font-size: 13px;
+}
+#task-dialog details {
+  margin: 15px 0;
+  padding: 14px 16px;
+}
+#task-dialog details summary {
+  min-height: 24px;
+}
+.record-choice {
+  border: 0;
+  padding: 0;
+  margin: 20px 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+}
+.record-choice legend {
+  padding: 0;
+  margin-bottom: 12px;
+  font-size: 15px;
+}
+.record-choice label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1 1 40%;
+  border: 1px solid #d6dfd1;
+  border-radius: 8px;
+  padding: 12px;
+  margin: 0;
+  min-height: 52px;
+  cursor: pointer;
+}
+.record-choice label:has(input:checked) {
+  background: #edf3e6;
+  border-color: #7a9a69;
+}
+.record-choice input {
+  flex-shrink: 0;
+  margin: 0;
+  width: 20px;
+  height: 20px;
+  accent-color: var(--green);
+}
+.record-choice label:last-child {
+  flex-basis: 100%;
+  font-size: 13px !important;
+}
+.record-actions {
+  position: sticky;
+  bottom: -32px;
+  padding: 16px 0 5px;
+  background: white;
+  border-top: 1px solid var(--line);
+  margin-top: 22px;
+}
+.record-actions .primary {
+  flex: 1;
+}
+#task-error {
+  font-size: 14px;
+}
+@media (max-width: 1000px) {
+  .bedside-task .secondary {
+    margin-left: 118px;
+  }
+  .bedside-task .badge {
+    margin-left: 118px;
+  }
+  .bedside-task .badge + .secondary {
+    margin-left: 0;
+  }
+}
+@media (max-width: 700px) {
+  nav {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    overflow: visible;
+    gap: 6px;
+  }
+  .nav-item {
+    font-size: 14px;
+    gap: 10px;
+    padding: 12px;
+  }
+  .bedside-focus {
+    padding: 25px 20px;
+  }
+  .bedside-focus h2 {
+    font-size: 24px;
+  }
+  .bedside-focus .bedside-button {
+    width: 100%;
+    min-width: 0;
+  }
+  .bedside-task .time {
+    width: 85px;
+    font-size: 17px;
+  }
+  .bedside-task .task-detail {
+    flex-basis: calc(100% - 103px);
+  }
+  .bedside-task .secondary {
+    margin-left: 103px;
+  }
+  .bedside-task .badge {
+    margin-left: 103px;
+  }
+  .bedside-task .badge + .secondary {
+    margin-left: 0;
+  }
+  .earlier-notice {
+    flex-direction: column;
+    align-items: stretch;
+    padding: 18px;
+    gap: 13px;
+  }
+  .earlier-notice .secondary {
+    width: 100%;
+  }
+  .manage-breadcrumb {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .record-filters {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .record-filters label {
+    width: 100%;
+  }
+  #task-dialog {
+    padding: 22px;
+  }
+  .record-actions {
+    bottom: -22px;
+    flex-direction: column;
+    align-items: stretch;
+    padding: 14px 0 3px;
+  }
+  .record-actions .secondary {
+    width: 100%;
+  }
+  .recorded-today {
+    padding: 20px 17px;
+  }
+}

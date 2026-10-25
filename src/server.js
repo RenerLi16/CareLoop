@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 
 // Development/static hosting only. No care-data API, accounts, cookies, or database.
 const files = {
+  "/bedside.js": ["./bedside.js", "text/javascript; charset=utf-8"],
   "/": ["../public/index.html", "text/html; charset=utf-8"],
   "/app.js": ["../public/app.js", "text/javascript; charset=utf-8"],
   "/storage.js": ["../public/storage.js", "text/javascript; charset=utf-8"],

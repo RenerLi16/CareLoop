@@ -25,6 +25,7 @@ try {
   });
   const context = await browser.newContext({
     viewport: { width: 1440, height: 1000 },
+    timezoneId: "America/Los_Angeles",
   });
   const page = await context.newPage(),
     errors = [],
@@ -37,6 +38,7 @@ try {
       body: req.postData(),
     }),
   );
+  await page.clock.install({ time: new Date("2026-10-25T15:10:00.000Z") });
   await page.goto(url);
   await page.getByRole("heading", { name: /One tablet/ }).waitFor();
   assert.equal(
@@ -67,16 +69,17 @@ try {
   await page.getByRole("heading", { name: "A rhythm for each day." }).waitFor();
   assert.equal(await page.locator(".schedule-row").count(), 4);
   await page.getByRole("button", { name: "Today", exact: true }).click();
+  await page.getByRole("button", { name: "Records", exact: true }).click();
   await page.locator("#day-filter").fill("2026-10-24");
-  await page.getByRole("button", { name: "Record / assign" }).first().click();
-  await page.getByLabel("Status", { exact: true }).selectOption("done");
+  await page.locator('#record-list [data-action="edit-task"]').first().click();
+  await page.getByRole("radio", { name: "Completed", exact: true }).check();
   await page
     .getByLabel("Recorded by", { exact: true })
     .selectOption({ label: "Lan" });
   await page
     .getByLabel("Actual completion / skip time")
     .fill("2026-10-24T08:05");
-  await page.getByRole("button", { name: "Save record" }).click();
+  await page.getByRole("button", { name: "Save completed record" }).click();
   await page.locator(".task.completed").first().waitFor();
   assert.match(
     await page.locator(".task.completed").first().innerText(),
@@ -84,31 +87,35 @@ try {
   );
   await page.reload();
   await page.getByRole("heading", { name: "A clearer day ahead." }).waitFor();
+  await page.getByRole("button", { name: "Records", exact: true }).click();
   await page.locator("#day-filter").fill("2026-10-24");
   await page.locator(".task.completed").first().waitFor();
   mkdirSync("test-results", { recursive: true });
   await page.screenshot({
-    path: "test-results/bedside-stage1-desktop.png",
+    path: "test-results/bedside-stage2-records.png",
     fullPage: true,
   });
   // A stale edit from a second tab cannot overwrite a newer change.
   const other = await context.newPage();
   await other.goto(url);
   await other.getByRole("heading", { name: "A clearer day ahead." }).waitFor();
+  await other.getByRole("button", { name: "Records", exact: true }).click();
   await other.locator("#day-filter").fill("2026-10-24");
   await other
-    .getByRole("button", { name: "Edit record", exact: true })
+    .locator('.task.completed [data-action="edit-task"]')
     .first()
     .click();
   await page
-    .getByRole("button", { name: "Edit record", exact: true })
+    .locator('.task.completed [data-action="edit-task"]')
     .first()
     .click();
+  await page.getByText("Assignment and notes", { exact: true }).click();
   await page.getByLabel("Note / reason for correction").fill("First tab saved");
-  await page.getByRole("button", { name: "Save record" }).click();
+  await page.getByRole("button", { name: "Save completed record" }).click();
   await page.locator("dialog").waitFor({ state: "detached" });
+  await other.getByText("Assignment and notes", { exact: true }).click();
   await other.getByLabel("Note / reason for correction").fill("Stale tab edit");
-  await other.getByRole("button", { name: "Save record" }).click();
+  await other.getByRole("button", { name: "Save completed record" }).click();
   await other.locator("dialog").waitFor({ state: "detached" });
   await other.getByText("First tab saved", { exact: true }).waitFor();
   assert.equal(
@@ -120,6 +127,91 @@ try {
     separate = await isolated.newPage();
   await separate.goto(url);
   await separate.getByRole("button", { name: "Set up this device" }).waitFor();
+  // Today always remains on the current patient-local date, regardless of Records filters.
+  await page.getByRole("button", { name: "Today", exact: true }).click();
+  assert.equal(await page.locator("#day-filter").count(), 0);
+  assert.match(await page.locator(".heading .lead").innerText(), /October 25/);
+  assert.match(await page.locator("#next-task-title").innerText(), /Example A/);
+  assert.equal(
+    await page
+      .locator(
+        'nav [data-tab="plan"], nav [data-tab="settings"], nav [data-tab="team"]',
+      )
+      .count(),
+    0,
+  );
+  await page.screenshot({
+    path: "test-results/bedside-stage2-desktop.png",
+    fullPage: true,
+  });
+  // The focused task opens a simple completed-entry form; cancel does not save it.
+  await page
+    .getByRole("button", { name: "Record this task", exact: true })
+    .click();
+  assert.equal(
+    await page
+      .getByRole("radio", { name: "Completed", exact: true })
+      .isChecked(),
+    true,
+  );
+  assert.equal(
+    await page.getByLabel("Recorded by", { exact: true }).inputValue(),
+    "",
+  );
+  assert.equal(
+    await page.locator(".assignment-details").getAttribute("open"),
+    null,
+  );
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  assert.match(await page.locator("#next-task-title").innerText(), /Example A/);
+  // Skipping a weight task requires attribution and time, but no invented measurement.
+  const weightRow = page
+    .locator(".bedside-task")
+    .filter({ hasText: "Record weight" });
+  await weightRow.getByRole("button", { name: /Record task/ }).click();
+  await page.getByRole("radio", { name: "Skipped", exact: true }).check();
+  await page.getByLabel("Recorded by", { exact: true }).selectOption("patient");
+  assert.equal(
+    await page.getByLabel("Recorded weight", { exact: true }).isVisible(),
+    false,
+  );
+  await page
+    .getByRole("button", { name: "Save skipped record", exact: true })
+    .click();
+  await page.locator("dialog").waitFor({ state: "detached" });
+  await page.locator(".recorded-today").waitFor();
+  assert.match(
+    await page.locator(".bedside-progress").innerText(),
+    /1\s+Skipped/,
+  );
+  await page.locator(".recorded-today summary").click();
+  assert.match(
+    await page.locator(".recorded-today").innerText(),
+    /Record weight/,
+  );
+  // Management is explicit and can be exited without publishing a plan.
+  await page.getByRole("button", { name: "Manage care", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Open care plan", exact: true })
+    .click();
+  await page
+    .getByLabel("Patient name", { exact: true })
+    .fill("Unsaved draft name");
+  await page
+    .getByRole("button", { name: "← Manage care", exact: true })
+    .click();
+  await page
+    .getByText("You have a care plan draft in this open page.", {
+      exact: false,
+    })
+    .waitFor();
+  await page
+    .getByRole("button", { name: "Back to Today", exact: true })
+    .click();
+  assert.match(
+    await page.locator(".heading .lead").innerText(),
+    /Fictional Rivera/,
+  );
   // Exercise actual IndexedDB transaction serialization and rollback using the same store as the UI.
   const storageResults = await page.evaluate(async () => {
     const { loadRecord, saveChange } = await import("/storage.js");
@@ -163,7 +255,10 @@ try {
   });
   await page.reload();
   await page.getByRole("heading", { name: "A clearer day ahead." }).waitFor();
-  await page.getByRole("button", { name: "Care team", exact: true }).click();
+  await page.getByRole("button", { name: "Manage care", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Open caregivers", exact: true })
+    .click();
   await page.getByLabel("Caregiver name", { exact: true }).fill("Amy");
   await page
     .getByRole("button", { name: "Add caregiver", exact: true })
@@ -172,7 +267,7 @@ try {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole("button", { name: "Today", exact: true }).click();
   await page.screenshot({
-    path: "test-results/bedside-stage1-mobile.png",
+    path: "test-results/bedside-stage2-mobile.png",
     fullPage: true,
   });
   assert.equal(
@@ -181,6 +276,96 @@ try {
     ),
     false,
   );
+  // Tablet layout and explicit assignment-only saving remain usable with large touch targets.
+  await page.setViewportSize({ width: 768, height: 1024 });
+  assert.ok(
+    (
+      await page
+        .getByRole("button", { name: "Record this task", exact: true })
+        .boundingBox()
+    ).height >= 58,
+  );
+  assert.equal(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth > innerWidth,
+    ),
+    false,
+  );
+  await page.screenshot({
+    path: "test-results/bedside-stage2-tablet.png",
+    fullPage: true,
+  });
+  await page
+    .getByRole("button", { name: "Record this task", exact: true })
+    .click();
+  await page
+    .getByRole("radio", {
+      name: "Leave pending / assignment only",
+      exact: true,
+    })
+    .check();
+  assert.equal(
+    await page.getByLabel("Recorded by", { exact: true }).isVisible(),
+    false,
+  );
+  await page.getByText("Assignment and notes", { exact: true }).click();
+  await page
+    .getByLabel("Assigned caregiver", { exact: true })
+    .selectOption({ label: "Minh" });
+  await page
+    .getByRole("button", { name: "Save assignment / reopen task", exact: true })
+    .click();
+  await page.locator("dialog").waitFor({ state: "detached" });
+  await page
+    .locator(".bedside-focus")
+    .getByText("Assigned to Minh", { exact: true })
+    .waitFor();
+  assert.match(await page.locator("#next-task-title").innerText(), /Example A/);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page
+    .getByRole("button", { name: "Record this task", exact: true })
+    .click();
+  assert.equal(
+    await page.getByLabel("Recorded by", { exact: true }).inputValue(),
+    "",
+  );
+  await page.screenshot({
+    path: "test-results/bedside-stage2-recording-mobile.png",
+    fullPage: true,
+  });
+  assert.equal(
+    await page
+      .locator("#task-dialog")
+      .evaluate((d) => d.scrollWidth > d.clientWidth),
+    false,
+  );
+  await page.keyboard.press("Escape");
+  await page.locator("dialog").waitFor({ state: "detached" });
+  // A storage failure must leave the actual recording form open with a persistent error.
+  await page
+    .getByRole("button", { name: "Record this task", exact: true })
+    .click();
+  await page.getByLabel("Recorded by", { exact: true }).selectOption("patient");
+  const versionBeforeFailure = await page.evaluate(async () => {
+    const before = await (await import("/storage.js")).loadRecord();
+    globalThis.originalCareLoopPut = IDBObjectStore.prototype.put;
+    IDBObjectStore.prototype.put = function () {
+      throw new DOMException("Test quota", "QuotaExceededError");
+    };
+    return before.version;
+  });
+  await page
+    .getByRole("button", { name: "Save completed record", exact: true })
+    .click();
+  await page.locator("#task-error").waitFor();
+  assert.match(await page.locator("#task-error").innerText(), /Not saved/);
+  assert.equal(await page.locator("#task-dialog[open]").count(), 1);
+  const versionAfterFailure = await page.evaluate(async () => {
+    IDBObjectStore.prototype.put = globalThis.originalCareLoopPut;
+    return (await (await import("/storage.js")).loadRecord()).version;
+  });
+  assert.equal(versionAfterFailure, versionBeforeFailure);
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
   assert.ok(
     requests.every(
       (r) =>
@@ -225,10 +410,11 @@ try {
   await reopened
     .getByRole("heading", { name: "A clearer day ahead." })
     .waitFor();
+  await reopened.getByRole("button", { name: "Records", exact: true }).click();
   await reopened.locator("#day-filter").fill("2026-10-24");
   await reopened.locator(".task.completed").first().waitFor();
   console.log(
-    "Stage 1 browser checks passed: account-free setup, local persistence, attribution, isolated profiles, cross-tab conflicts, transaction rollback, failed-save UI, caregiver names, and mobile layout. No care-data network requests.",
+    "Stage 2 browser checks passed: local persistence, cross-tab conflicts, current-day focus, skipped measurements, assignment-only recording, management navigation, phone/tablet layouts, and no care-data network requests.",
   );
 } finally {
   await browser?.close();

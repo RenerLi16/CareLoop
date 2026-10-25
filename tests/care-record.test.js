@@ -262,3 +262,33 @@ test("restore rejects malformed, old-server and incompatible backups without cha
     assert.throws(() => change(record, { type: "restore", backup: bad }));
   assert.equal(record.tasks.length, 90);
 });
+
+test("correcting a measured task to skipped clears the measurement and preserves it in audit history", () => {
+  let record = published();
+  const weight = record.tasks.find((task) => task.kind === "weight");
+  record = change(record, {
+    type: "task",
+    patch: {
+      id: weight.id,
+      status: "done",
+      actualAt: now,
+      recordedBy: "patient",
+      value: "64.5",
+      unit: "kg",
+    },
+  });
+  record = change(record, {
+    type: "task",
+    patch: {
+      id: weight.id,
+      status: "skipped",
+      actualAt: now,
+      recordedBy: "patient",
+    },
+  });
+  assert.equal(record.tasks.find((task) => task.id === weight.id).value, null);
+  assert.deepEqual(JSON.parse(record.audit[0].details).before.value, {
+    amount: 64.5,
+    unit: "kg",
+  });
+});

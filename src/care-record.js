@@ -117,6 +117,7 @@ function patchTask(state, task, patch, now) {
         fail("Enter when this happened, no later than now.");
       const person = member(state, patch.recordedBy);
       if (!person) fail("Choose who is recording this task.");
+      if (patch.status === "skipped") task.value = null;
       task.actualAt = new Date(patch.actualAt).toISOString();
       task.recordedBy = person.id;
       task.recordedByName = person.name;

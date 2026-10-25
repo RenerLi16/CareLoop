@@ -8,6 +8,7 @@ import {
 } from "/domain.js";
 import { loadRecord, saveChange, onRecordChange } from "/storage.js";
 import { makeBackup } from "/care-record.js";
+import { bedsideDay } from "/bedside.js";
 
 const $ = (s) => document.querySelector(s),
   esc = (s) =>
@@ -28,6 +29,7 @@ let state = null,
   preview = null,
   draftVersion = null,
   filter = "",
+  recordQuery = "",
   busy = false,
   reminderTimer = null,
   renderedTab = null;
@@ -110,19 +112,17 @@ function draw() {
   }
   app.innerHTML = `<div class="shell"><aside><a class="brand" href="/">✳ <span>CareLoop</span></a><div class="team-label">${esc(state.profile.patient)} · Bedside tablet</div><nav aria-label="Main navigation">${[
     ["today", "◷", "Today"],
-    ["plan", "▤", "Care plan"],
-    ["schedule", "◴", "Daily schedule"],
-    ["team", "♧", "Care team"],
+    ["schedule", "◴", "Schedule"],
     ["records", "☷", "Records"],
-    ["settings", "⚙", "Settings"],
+    ["manage", "⚙", "Manage care"],
   ]
     .map(
       ([key, icon, label]) =>
-        `<button data-tab="${key}" class="nav-item ${key === tab ? "active" : ""}" ${key === tab ? 'aria-current="page"' : ""}><span aria-hidden="true">${icon}</span>${label}</button>`,
+        `<button data-tab="${key}" class="nav-item ${key === tab || (key === "manage" && ["plan", "team", "settings"].includes(tab)) ? "active" : ""}" ${key === tab || (key === "manage" && ["plan", "team", "settings"].includes(tab)) ? 'aria-current="page"' : ""}><span aria-hidden="true">${icon}</span>${label}</button>`,
     )
     .join(
       "",
-    )}</nav><div class="aside-bottom"><div><b>Saved on this device</b><small>No account · no remote sharing</small></div></div></aside><main class="main"><header><span class="eyebrow">THE NEXT 30 DAYS, TOGETHER</span><span class="sync">● Saved in this browser</span></header><div id="content">${{ today: today, plan: planView, schedule: scheduleView, team: teamView, records: recordsView, settings: settingsView }[tab]()}</div><footer>CareLoop organizes the instructions you enter. It does not diagnose, recommend treatment, or check all possible medication interactions.</footer></main></div>`;
+    )}</nav><div class="aside-bottom"><div><b>Saved on this device</b><small>No account · no remote sharing</small></div></div></aside><main class="main"><header><span class="eyebrow">THE NEXT 30 DAYS, TOGETHER</span><span class="sync">● Saved in this browser</span></header><div id="content">${["plan", "team", "settings"].includes(tab) ? `<div class="manage-breadcrumb"><button type="button" class="secondary" data-tab="manage">← Manage care</button><span>Care management · changes affect the saved plan</span></div>` : ""}${{ today: today, plan: planView, schedule: scheduleView, team: teamView, records: recordsView, settings: settingsView, manage: manageView }[tab]()}</div><footer>CareLoop organizes the instructions you enter. It does not diagnose, recommend treatment, or check all possible medication interactions.</footer></main></div>`;
   if (renderedTab !== tab) {
     window.scrollTo(0, 0);
     renderedTab = tab;
@@ -146,37 +146,72 @@ function warningsView() {
         .join("")}</section>`
     : "";
 }
+function timeLabel(iso) {
+  return new Intl.DateTimeFormat("en", {
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: state.plan?.timeZone || state.profile.timeZone,
+  }).format(new Date(iso));
+}
+function taskSummary(task) {
+  const person = state.team.find((p) => p.id === task.who);
+  return `${person ? "Assigned to " + person.name : "Unassigned"}${task.actualAt ? " · Recorded " + fmt(task.actualAt) + (task.recordedByName ? " by " + task.recordedByName : "") : ""}`;
+}
 function today() {
-  const date = filter || localDate(),
-    tasks = state.tasks.filter((t) => !t.archived && t.date === date),
-    done = tasks.filter((t) => t.status === "done").length,
-    overdue = state.tasks.filter(
-      (t) =>
-        !t.archived &&
-        t.status === "todo" &&
-        Date.parse(t.dueAt) < Date.now() - 3600000,
-    ).length,
-    next = state.tasks.find(
-      (t) =>
-        !t.archived && t.status === "todo" && Date.parse(t.dueAt) >= Date.now(),
-    );
+  const date = localDate(),
+    day = bedsideDay(state.tasks, date),
+    next = day.next;
+  const dateLabel = new Intl.DateTimeFormat("en", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    timeZone: state.profile.timeZone,
+  }).format(new Date());
+  const late = next && Date.parse(next.dueAt) < Date.now() - 3600000;
   return (
     heading(
       "A clearer day ahead.",
-      state.plan
-        ? `Care for ${esc(state.plan.patient)} · ${esc(state.plan.timeZone)}`
-        : "Your family’s care starts here.",
-      state.plan ? button("calendar", "Export calendar", "secondary") : "",
+      `${esc(dateLabel)} · Care for ${esc(state.profile.patient)} · ${esc(state.profile.timeZone)}`,
     ) +
     (!state.plan
       ? emptyView()
-      : `<div class="stats"><section class="card"><span>Today’s progress</span><strong>${state.tasks.filter((t) => !t.archived && t.date === localDate() && t.status === "done").length}<small> / ${state.tasks.filter((t) => !t.archived && t.date === localDate()).length}</small></strong></section><section class="card"><span>Past due · all days</span><strong>${overdue}</strong><small>More than 1 hour overdue</small></section><section class="card"><span>Next on the plan</span><strong class="next-time">${next ? esc(next.time) : "All clear"}</strong><small>${next ? esc(next.label) + " · " + esc(next.date) : "No upcoming tasks"}</small></section></div>${warningsView()}<section class="card"><div class="section-title"><div><h2>The daily routine</h2><p class="muted">${done} of ${tasks.length} recorded for this day</p></div><label>View day<input id="day-filter" type="date" value="${esc(date)}"></label></div>${tasks.length ? tasks.map(taskRow).join("") : '<p class="empty-line">No tasks for this date. Choose a date within the plan.</p>'}</section>${state.plan.flags?.length ? `<section class="card flags"><h2>Keep these instructions close</h2><p class="muted">Copied from your plan. Check the original paperwork for full instructions.</p>${state.plan.flags.map((f) => `<p>${esc(f)}</p>`).join("")}</section>` : ""}`)
+      : `<div class="bedside-view">${warningsView()}${day.earlier.length ? `<section class="earlier-notice"><div><b>${day.earlier.length} earlier task${day.earlier.length === 1 ? " has" : "s have"} no record yet</b><p>Review what happened on previous days.</p></div>${button("earlier-records", "Review earlier records", "secondary", `data-date="${esc(day.earlier[0].date)}"`)}</section>` : ""}<section class="card bedside-focus" aria-labelledby="next-task-title"><div class="focus-heading"><span class="eyebrow">${late ? "CHECK THIS TASK" : "NEXT ON TODAY’S PLAN"}</span><span class="badge ${late ? "late" : ""}">${late ? "Past due" : next ? "Pending" : "Today"}</span></div>${next ? `<div class="focus-time">${esc(timeLabel(next.dueAt))}</div><h2 id="next-task-title">${esc(next.label)}</h2><p>${esc(taskSummary(next))}</p><p class="focus-hint">${late ? "Record what actually happened. Check the original instructions for any questions about a missed task." : "Review the task, then record who did it and when."}</p>${button("edit-task", "Record this task", "primary bedside-button", `data-id="${esc(next.id)}"`)}<small>Nothing is marked complete until you save the record.</small>` : `<h2 id="next-task-title">${day.today.length ? "Today’s tasks are recorded." : "No tasks scheduled for today."}</h2><p>${day.today.length ? `${day.completed.length} completed · ${day.skipped.length} skipped. Your records are saved on this device.` : "Check the schedule or open Records to see the plan’s dates."}</p><button type="button" class="secondary bedside-button" data-tab="records">View care records</button>`}</section><div class="bedside-progress" aria-label="Today’s progress"><div><strong>${day.completed.length}</strong><span>Completed</span></div><div><strong>${day.pending.length}</strong><span>Still pending</span></div><div><strong>${day.skipped.length}</strong><span>Skipped</span></div></div><section class="card"><div class="section-title"><div><h2>Still to record today</h2><p class="muted">${day.pending.length} task${day.pending.length === 1 ? "" : "s"} · ${esc(date)}</p></div></div>${day.pending.length ? day.pending.map((t) => taskRow(t, true)).join("") : '<p class="empty-line">No pending tasks for today.</p>'}</section>${day.recorded.length ? `<details class="card recorded-today"><summary>Recorded today · ${day.recorded.length} task${day.recorded.length === 1 ? "" : "s"}</summary>${day.recorded.map((t) => taskRow(t, true)).join("")}</details>` : ""}${state.plan.flags?.length ? `<section class="card flags"><h2>Keep these instructions close</h2><p class="muted">Copied from your plan. Check the original paperwork for full instructions.</p>${state.plan.flags.map((f) => `<p>${esc(f)}</p>`).join("")}</section>` : ""}</div>`)
   );
 }
-function taskRow(t) {
-  const person = state.team.find((x) => x.id === t.who),
-    late = t.status === "todo" && Date.parse(t.dueAt) < Date.now() - 3600000;
-  return `<article class="task ${t.status === "done" ? "completed" : ""}"><div class="time">${esc(t.time)}<small>${esc(t.kind)}</small></div><div class="task-detail"><b>${esc(t.label)}</b><small>${esc(person?.name || "Unassigned")}${t.actualAt ? " · Recorded " + esc(fmt(t.actualAt)) + (t.recordedByName ? " by " + esc(t.recordedByName) : "") : ""}</small>${t.value ? `<p>${esc(typeof t.value === "object" ? t.value.amount + " " + t.value.unit : t.value)}</p>` : ""}${t.note ? `<p class="muted">${esc(t.note)}</p>` : ""}</div><span class="badge ${late ? "late" : ""}">${late ? "Past due" : esc(t.status)}</span>${button("edit-task", t.status === "todo" ? "Record / assign" : "Edit record", "secondary", `data-id="${esc(t.id)}"`)}</article>`;
+function taskRow(t, bedside = false) {
+  const late =
+    t.status === "todo" && Date.parse(t.dueAt) < Date.now() - 3600000;
+  return `<article class="task ${bedside ? "bedside-task" : ""} ${t.status === "done" ? "completed" : ""}" data-task-id="${esc(t.id)}"><div class="time">${esc(bedside ? timeLabel(t.dueAt) : t.time)}<small>${esc(t.kind)}</small></div><div class="task-detail"><b>${esc(t.label)}</b><small>${esc(taskSummary(t))}</small>${t.value ? `<p>${esc(typeof t.value === "object" ? t.value.amount + " " + t.value.unit : t.value)}</p>` : ""}${t.note ? `<p class="muted">${esc(t.note)}</p>` : ""}</div><span class="badge ${late ? "late" : ""}">${late ? "Past due" : t.status === "done" ? "Completed" : t.status === "skipped" ? "Skipped" : "Pending"}</span>${button("edit-task", t.status === "todo" ? "Record task" : "Edit record", "secondary", `data-id="${esc(t.id)}" aria-label="${t.status === "todo" ? "Record task" : "Edit record"}: ${esc(t.label)}"`)}</article>`;
+}
+function manageView() {
+  const options = [
+    [
+      "plan",
+      "▤",
+      "Care plan",
+      "Read discharge instructions, review medications, and publish a schedule.",
+    ],
+    [
+      "team",
+      "♧",
+      "Caregivers",
+      "Add or change the names used for assignment and recording.",
+    ],
+    [
+      "settings",
+      "⚙",
+      "Device and data",
+      "Reminders, calendar export, backups, restore, and data deletion.",
+    ],
+  ];
+  return (
+    heading(
+      "Manage care.",
+      "Make changes here, then return to Today for the daily routine.",
+      '<button type="button" class="secondary" data-tab="today">Back to Today</button>',
+    ) +
+    `<div class="manage-grid">${options.map(([key, icon, label, description]) => `<section class="card manage-card"><span class="manage-icon" aria-hidden="true">${icon}</span><h2>${label}</h2><p>${description}</p><button type="button" class="primary" data-tab="${key}">Open ${label.toLowerCase()}</button></section>`).join("")}</div><p class="muted">This area helps prevent accidental changes during daily use. It is not locked; anyone using this browser can open it.</p>${draft ? '<p class="notice">You have a care plan draft in this open page. It is not saved until you publish it.</p>' : ""}`
+  );
 }
 function newDraft() {
   return {
@@ -338,25 +373,50 @@ function teamView() {
       )}</div><p class="muted">${state.tasks.filter((t) => !t.archived && !t.who).length} tasks are unassigned. Assign them from Today or Records. Removing a name keeps past records.</p>`
   );
 }
+function matchingRecords() {
+  const q = recordQuery.trim().toLowerCase();
+  return state.tasks.filter(
+    (t) =>
+      (!t.archived || t.status !== "todo") &&
+      (!filter || t.date === filter) &&
+      (
+        t.label +
+        " " +
+        t.date +
+        " " +
+        t.status +
+        " " +
+        (t.recordedByName || "") +
+        " " +
+        (t.note || "")
+      )
+        .toLowerCase()
+        .includes(q),
+  );
+}
+function recordList() {
+  const tasks = matchingRecords();
+  return {
+    html:
+      tasks
+        .slice(0, 100)
+        .map(
+          (t) => `<div class="record-date">${esc(t.date)}</div>${taskRow(t)}`,
+        )
+        .join("") ||
+      '<p class="empty-line">No matching records. Try another date or clear the filters.</p>',
+    count: `Showing ${Math.min(tasks.length, 100)} of ${tasks.length} matching tasks.`,
+  };
+}
 function recordsView() {
-  const tasks = state.tasks.filter((t) => !t.archived || t.status !== "todo");
+  const list = recordList();
   return (
     heading(
       "The care record.",
-      "Completed tasks survive plan changes. Corrections are recorded in the activity log.",
+      "Review other dates or correct an entry. Today always shows the patient’s current day.",
     ) +
     warningsView() +
-    `<section class="card"><label>Search records<input id="record-search" placeholder="Medication, date, or task"></label><div id="record-list">${
-      tasks.length
-        ? tasks
-            .slice(0, 100)
-            .map(
-              (t) =>
-                `<div class="record-date">${esc(t.date)}</div>${taskRow(t)}`,
-            )
-            .join("")
-        : "<p>No records yet.</p>"
-    }</div><p class="muted">Showing up to 100 matching tasks. Use search to find a date or medication.</p></section><section class="card"><h2>Recent activity</h2>${state.audit
+    `<section class="card"><div class="record-filters"><label>Search records<input id="record-search" value="${esc(recordQuery)}" placeholder="Medication, caregiver, or note"></label><label>Filter by date<input id="day-filter" type="date" value="${esc(filter)}"></label>${button("clear-filters", "Clear filters", "secondary")}</div><p id="record-count" class="muted" aria-live="polite">${list.count}</p><div id="record-list">${list.html}</div></section><section class="card"><h2>Recent activity</h2>${state.audit
       .slice(0, 50)
       .map(
         (a) =>
@@ -374,23 +434,65 @@ function settingsView() {
     `<section class="card"><h2>Local storage</h2><p>The plan and care history are saved in this browser’s database on this device. They are not sent to the app server. There are no accounts or remote family access.</p><p class="muted">Anyone who can open this browser can read or change the record. Use the tablet’s screen lock. Clearing browser data can delete the record. Backups and calendar exports create separate copies.</p></section><section class="card"><h2>Reminders</h2><p>Page reminders require permission and an open, awake page. They cannot guarantee alarms when the tablet is locked or the browser is closed.</p>${button("reminders", "Enable reminders while this page is open", "secondary")}<h3>Optional calendar export</h3><p class="muted">The file contains care details and a 15-minute reminder. Importing it into a cloud calendar can send those details outside this device. This is a snapshot; later plan edits do not update imported events.</p>${button("calendar", "Download calendar (.ics)", "secondary")}</section><section class="card"><h2>Backup and restore</h2><p>A backup is a plain-text file containing the patient’s care record and activity history. Keep it private. Nothing is uploaded when you download or restore a backup here.</p><div class="actions">${button("backup", "Download backup", "secondary")}<label class="file-label">Restore bedside backup<input type="file" id="backup-upload" accept=".json,application/json"></label></div><p class="muted">Restoring replaces the bedside record in this browser. The older server version’s backups are a different format and cannot be restored here yet.</p><hr><h3>Delete this device’s care data</h3><p>Removes setup, caregivers, plan, records, and activity from this browser’s active record. Exported files and the old server database are separate copies.</p>${button("reset", "Delete care data", "danger-button")}</section><section class="card"><h2>Supported scope</h2><p>English text entry; fixed daily frequencies; food timing windows; named medication spacing rules; 30-day plans. Unsupported instructions require review. Translation and photo reading are not included.</p><p>Offline installation and additional backup protections are planned for later stages. No clinical validation has been performed; use fictional data while testing.</p></section>`
   );
 }
+function updateRecordForm() {
+  const form = $("#task-form");
+  if (!form) return;
+  const status = new FormData(form).get("status"),
+    recording = status !== "todo";
+  form.querySelector(".record-fields").hidden = !recording;
+  form.querySelector(".measurement-fields").hidden = status !== "done";
+  for (const name of ["recordedBy", "actualAt"]) {
+    const control = form.elements.namedItem(name);
+    control.required = recording;
+    control.disabled = !recording;
+  }
+  const value = form.elements.namedItem("value");
+  if (value) value.required = status === "done";
+  for (const control of form.querySelectorAll(
+    ".measurement-fields input, .measurement-fields select, .measurement-fields textarea",
+  ))
+    control.disabled = status !== "done";
+  form.querySelector('[type="submit"]').textContent =
+    status === "done"
+      ? "Save completed record"
+      : status === "skipped"
+        ? "Save skipped record"
+        : "Save assignment / reopen task";
+}
 function editTask(id) {
   const t = state.tasks.find((t) => t.id === id);
   const dialog = document.createElement("dialog");
   dialog.id = "task-dialog";
   dialog.dataset.version = state.version;
-  dialog.innerHTML = `<form id="task-form"><h2>${esc(t.label)}</h2><p>${esc(t.date)} at ${esc(t.time)} · ${esc(state.plan?.timeZone)}</p><input name="id" type="hidden" value="${esc(id)}">${select("Assigned caregiver", "who", t.who, [["", "Unassigned"], ...state.team.filter((m) => !m.archived).map((m) => [m.id, m.name])])}${select(
-    "Status",
-    "status",
-    t.status,
-    [
-      ["todo", "Pending"],
-      ["done", "Completed"],
-      ["skipped", "Skipped"],
-    ],
-  )}${select("Recorded by", "recordedBy", t.recordedBy || "", [["", "Choose who is recording"], ...state.team.filter((m) => !m.archived).map((m) => [m.id, m.name])])}${field("Actual completion / skip time (your device’s time zone)", "actualAt", localInput(t.actualAt || undefined), "datetime-local")}<p class="muted">For a past task, enter when it actually happened. This can differ from when you record it.</p>${t.kind === "weight" ? field("Recorded weight", "value", t.value?.amount || "", "number", 'min="0.01" step="0.01"') + select("Unit", "unit", t.value?.unit || "kg", ["kg", "lb"]) : t.kind === "symptoms" ? `<label>Symptoms (write “none” if none)<textarea name="value">${esc(t.value || "")}</textarea></label>` : ""}<label>Note / reason for correction<textarea name="note">${esc(t.note)}</textarea></label><div class="actions"><button type="submit" class="primary">Save record</button>${button("close-dialog", "Cancel", "secondary")}</div></form>`;
+  const status = t.status === "todo" ? "done" : t.status;
+  const actual = t.actualAt
+    ? localInput(t.actualAt)
+    : t.date === localDate()
+      ? localInput()
+      : "";
+  const people = state.team
+    .filter((m) => !m.archived)
+    .map((m) => [m.id, m.name]);
+  dialog.setAttribute("aria-labelledby", "record-title");
+  dialog.setAttribute("aria-describedby", "record-schedule");
+  dialog.innerHTML = `<form id="task-form"><span class="eyebrow">RECORD WHAT HAPPENED</span><h2 id="record-title">${esc(t.label)}</h2><p id="record-schedule">Scheduled ${esc(fmt(t.dueAt))} · ${esc(state.plan?.timeZone)}</p>${t.date !== localDate() ? '<p class="notice">This task is from a different day. Enter when it actually happened.</p>' : ""}${t.source ? `<details class="task-source"><summary>Original instruction</summary><p>${esc(t.source)}</p></details>` : ""}<input name="id" type="hidden" value="${esc(id)}"><fieldset class="record-choice"><legend>What happened?</legend>${[
+    ["done", "Completed"],
+    ["skipped", "Skipped"],
+    ["todo", "Leave pending / assignment only"],
+  ]
+    .map(
+      ([value, label]) =>
+        `<label><input type="radio" name="status" value="${value}" ${value === status ? "checked" : ""}><span>${label}</span></label>`,
+    )
+    .join(
+      "",
+    )}</fieldset><div class="record-fields">${select("Recorded by", "recordedBy", t.recordedBy || "", [["", "Choose who is recording"], ...people])}${field("Actual completion / skip time (your device’s time zone)", "actualAt", actual, "datetime-local")}<p class="muted">Use the time it happened, even if you are recording it later.</p></div><div class="measurement-fields">${t.kind === "weight" ? field("Recorded weight", "value", t.value?.amount || "", "number", 'min="0.01" step="0.01"') + select("Unit", "unit", t.value?.unit || "kg", ["kg", "lb"]) : t.kind === "symptoms" ? `<label>Symptoms (write “none” if none)<textarea name="value">${esc(t.value || "")}</textarea></label>` : ""}</div><details class="assignment-details" ${t.note ? "open" : ""}><summary>Assignment and notes</summary>${select("Assigned caregiver", "who", t.who, [["", "Unassigned"], ...people])}<label>Note / reason for correction<textarea name="note">${esc(t.note)}</textarea></label></details><p id="task-error" class="alert" role="alert" tabindex="-1" hidden></p><div class="actions record-actions"><button type="submit" class="primary bedside-button">Save completed record</button>${button("close-dialog", "Cancel", "secondary")}</div></form>`;
   document.body.append(dialog);
+  updateRecordForm();
   dialog.showModal();
+  dialog.addEventListener("cancel", (event) => {
+    if (busy) event.preventDefault();
+  });
   dialog.addEventListener("close", () => dialog.remove());
 }
 app.addEventListener("click", async (e) => {
@@ -406,12 +508,23 @@ app.addEventListener("click", async (e) => {
   await action(b.dataset.action, b);
 });
 document.addEventListener("click", (e) => {
-  if (e.target.closest('[data-action="close-dialog"]'))
+  if (!busy && e.target.closest('[data-action="close-dialog"]'))
     $("#task-dialog")?.close();
 });
 async function action(action, b) {
   if (busy) return;
   try {
+    if (action === "clear-filters") {
+      filter = "";
+      recordQuery = "";
+      draw();
+    }
+    if (action === "earlier-records") {
+      filter = b.dataset.date;
+      recordQuery = "";
+      tab = "records";
+      draw();
+    }
     if (action === "retry-storage") {
       await refresh();
       return;
@@ -565,6 +678,7 @@ async function action(action, b) {
       clearInterval(reminderTimer);
       tab = "today";
       filter = "";
+      recordQuery = "";
       draft = null;
       preview = null;
       await refresh();
@@ -585,8 +699,8 @@ document.addEventListener("submit", async (e) => {
   e.preventDefault();
   if (busy) return;
   busy = true;
-  const submit = e.target.querySelector('[type="submit"]');
-  if (submit) submit.disabled = true;
+  const formButtons = [...e.target.querySelectorAll("button")];
+  for (const control of formButtons) control.disabled = true;
   try {
     if (e.target.getAttribute("id") === "setup-form") {
       const data = new FormData(e.target);
@@ -648,6 +762,12 @@ document.addEventListener("submit", async (e) => {
     }
   } catch (err) {
     toast(err.message, true);
+    if (e.target.getAttribute("id") === "task-form" && err.status !== 409) {
+      const message = $("#task-error");
+      message.textContent = err.message;
+      message.hidden = false;
+      message.focus();
+    }
     if (err.status === 409) {
       if (e.target.getAttribute("id") === "task-form") {
         $("#task-dialog")?.close();
@@ -673,8 +793,13 @@ document.addEventListener("submit", async (e) => {
     }
   } finally {
     busy = false;
-    if (submit?.isConnected) submit.disabled = false;
+    for (const control of formButtons)
+      if (control.isConnected) control.disabled = false;
   }
+});
+document.addEventListener("change", (e) => {
+  if (e.target.closest("#task-form") && e.target.name === "status")
+    updateRecordForm();
 });
 app.addEventListener("change", async (e) => {
   try {
@@ -713,20 +838,10 @@ app.addEventListener("change", async (e) => {
 });
 app.addEventListener("input", (e) => {
   if (e.target.getAttribute("id") === "record-search") {
-    const q = e.target.value.toLowerCase(),
-      tasks = state.tasks
-        .filter(
-          (t) =>
-            (!t.archived || t.status !== "todo") &&
-            (t.label + " " + t.date + " " + t.status).toLowerCase().includes(q),
-        )
-        .slice(0, 100);
-    $("#record-list").innerHTML =
-      tasks
-        .map(
-          (t) => `<div class="record-date">${esc(t.date)}</div>${taskRow(t)}`,
-        )
-        .join("") || "<p>No matching records.</p>";
+    recordQuery = e.target.value;
+    const list = recordList();
+    $("#record-list").innerHTML = list.html;
+    $("#record-count").textContent = list.count;
   }
   if (e.target.closest("[data-med]")) {
     const row = e.target.closest("[data-med]");
@@ -746,6 +861,7 @@ async function checkForLocalChanges() {
       state = fresh;
       tab = "today";
       filter = "";
+      recordQuery = "";
       draw();
       toast("The care record was deleted in another tab.");
       return;
@@ -774,3 +890,21 @@ try {
 } catch (error) {
   storageFailure(error.message);
 }
+
+// Refresh the visible day/time while the bedside page is awake; never interrupt a form.
+function refreshBedsideClock() {
+  if (
+    !state?.plan ||
+    tab !== "today" ||
+    busy ||
+    document.querySelector("dialog[open]") ||
+    document.hidden
+  )
+    return;
+  const active = document.activeElement;
+  if (active && active !== document.body && active.closest("#content")) return;
+  const content = $("#content");
+  if (content) content.innerHTML = today();
+}
+setInterval(refreshBedsideClock, 30000);
+window.addEventListener("focus", refreshBedsideClock);
