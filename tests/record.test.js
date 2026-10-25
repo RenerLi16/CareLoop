@@ -212,3 +212,28 @@ test("a new correction needs its own reason even when an older note exists", () 
   );
   assert.equal(next.tasks[0].corrections[0].reason, "Recorded the wrong task");
 });
+
+test("first-visit setup can save a name and care team before there is a discharge plan", () => {
+  const record = emptyRecord();
+  record.setup = { step: 3, patientName: "Alice", completed: true };
+  record.team = [{ id: "family", name: "Jamie", rel: "Daughter" }];
+  const saved = normalizeRecord(JSON.parse(JSON.stringify(record)));
+  assert.deepEqual(saved.setup, record.setup);
+  assert.equal(saved.patient, null);
+  assert.equal(saved.team[0].name, "Jamie");
+  assert.equal(
+    normalizeRecord({ schema: 2, revision: 0 }).setup,
+    null,
+    "Older records have no setup state",
+  );
+  for (const setup of [
+    { step: 4, patientName: "Alice", completed: false },
+    { step: 2, patientName: " ", completed: false },
+    { step: 1, patientName: "Alice", completed: true },
+    { step: 3, patientName: "A".repeat(101), completed: true },
+  ])
+    assert.throws(
+      () => normalizeRecord({ ...record, setup }),
+      /invalid format/,
+    );
+});

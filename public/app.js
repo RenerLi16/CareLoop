@@ -1,17 +1,18 @@
+import { createSetupWizard } from "/setup.js";
 import {
-  autoResolve,
-  checkTimes,
-  DEFAULT_MEALS,
-  FREQUENCIES,
-} from "/scheduler.js";
+  homeQueue,
+  taskDue,
+  timingStatus,
+  resolveRemaining,
+} from "/live-schedule.js";
+import { observeMedicineTimeline } from "/timeline.js";
+import { createLanguageControl, translateInterfaceText } from "/i18n.js";
+import { autoResolve, DEFAULT_MEALS, FREQUENCIES } from "/scheduler.js";
 import { parseInstructions } from "/instructions.js";
-import {
-  generatePlanTasks,
-  preparePlanTasks,
-  validateDatedTasks,
-} from "/care-plan.js";
+import { generatePlanTasks, preparePlanTasks } from "/care-plan.js";
 import {
   RECORD_KEY,
+  isTaskExpired,
   emptyRecord,
   recordTask,
   updateCaregiver,
@@ -43,7 +44,8 @@ let lastSaved,
   busy = false,
   draftToken = null,
   draftLoaded = false,
-  draftDirty = false;
+  draftDirty = false,
+  draftStartAt = null;
 const validDate = (value) =>
   /^\d{4}-\d{2}-\d{2}$/.test(value || "") &&
   localISO(new Date(value + "T12:00:00")) === value;
@@ -56,6 +58,8 @@ function localISO(d) {
 }
 
 let S = emptyRecord();
+let queueClockTimer;
+let setupWizard;
 
 /* =======================================================================
    1. COMPILER — constraint placement, hand-written
@@ -80,7 +84,7 @@ function resolutionHTML(schedule) {
       .map((v) => `<div class="banner"><b>Not saved.</b> ${esc(v.msg)}</div>`)
       .join("");
   return schedule.adjustments.length
-    ? `<div class="banner green"><b>Automatically resolved</b>${schedule.adjustments.map((a) => `<div>${esc(a.drug)}: ${esc(a.before.join(", "))} → <b>${esc(a.after.join(", "))}</b> · ${esc(a.reason)}</div>`).join("")}</div>`
+    ? `<div class="banner green"><b>Automatically resolved</b>${schedule.adjustments.map((a) => `<div>${esc(a.drug)}: ${esc(a.before.join(", "))} → <b>${esc(a.after.join(", "))}</b> · <span>${esc(a.reason)}</span></div>`).join("")}</div>`
     : '<div class="small">The entered timing rules fit. No changes needed.</div>';
 }
 function generateTasks(state, days = 30) {
@@ -98,6 +102,13 @@ function findLogViolations(state, windowMin = 180) {
   );
   const byMed = {};
   done.forEach((t) => {
+    const timing = timingStatus(state, t, t.doneAt);
+    if (!timing.fits)
+      out.push({
+        kind: "target",
+        a: t,
+        msg: `${t.label}: ${timing.reasons.join(" ")}`,
+      });
     (byMed[t.medId] = byMed[t.medId] || []).push(t);
   });
 
@@ -113,7 +124,7 @@ function findLogViolations(state, windowMin = 180) {
           kind: "duplicate",
           a: list[i - 1],
           b: list[i],
-          msg: `${med?.drug || "?"} recorded twice, ${Math.round(gap)} min apart. ${exact ? `The instruction requires ${need} min.` : "Check for a duplicate record; this is not a dosing recommendation."} Contact the care team for dose advice; future doses have not been changed.`,
+          msg: `${med?.drug || "?"} recorded twice, ${Math.round(gap)} min apart. ${exact ? `The instruction requires ${need} min.` : "Check for a duplicate record; this is not a dosing recommendation."} Contact the care team for dose advice.`,
         });
     }
   });
@@ -141,35 +152,10 @@ function findLogViolations(state, windowMin = 180) {
           kind: "interval",
           a: A,
           b: B,
-          msg: `${ma.drug} and ${mb.drug} were recorded ${Math.round(gap)} min apart; the entered rule requires ${need * 60} min. Check whether the records are accurate. For dose advice, contact the care team; future doses have not been changed.`,
+          msg: `${ma.drug} and ${mb.drug} were recorded ${Math.round(gap)} min apart; the entered rule requires ${need * 60} min. Check whether the records are accurate. For dose advice, contact the care team.`,
         });
     }
   return out;
-}
-
-function findMissed(state, nowMin, graceMin = 60) {
-  const today = localISO(new Date());
-  return state.tasks
-    .filter((t) => t.kind === "med" && t.status === "todo" && t.date === today)
-    .filter(
-      (t) =>
-        (Date.now() -
-          (t.dueAt ?? new Date(t.date + "T" + t.time + ":00").getTime())) /
-          60000 >
-        graceMin,
-    )
-    .map((t) => {
-      const late = Math.floor(
-        (Date.now() -
-          (t.dueAt ?? new Date(t.date + "T" + t.time + ":00").getTime())) /
-          60000,
-      );
-      return {
-        task: t,
-        lateMin: late,
-        msg: `${t.time} ${esc(t.label)} still open — ${Math.floor(late / 60)}h ${late % 60}m past due.`,
-      };
-    });
 }
 
 function computeLoad(state) {
@@ -186,6 +172,7 @@ function computeLoad(state) {
   );
   let un = 0;
   state.tasks.forEach((t) => {
+    if (t.status === "discarded") return;
     const k = by[t.who];
     if (!k) {
       un++;
@@ -293,10 +280,22 @@ function parseLocal(text) {
 
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => Array.from(document.querySelectorAll(s));
+const tableObserver = new ResizeObserver((entries) => {
+  entries.forEach((entry) => {
+    if (!entry.target.isConnected) {
+      tableObserver.unobserve(entry.target);
+      return;
+    }
+    updateTableScroll(entry.target.closest(".table-scroll"));
+  });
+});
+
 function notify(message, error = false) {
   const status = $("#saveStatus");
   status.textContent = message;
   status.classList.toggle("error", error);
+  if (document.querySelector("#setup-dialog")?.open)
+    document.querySelector("#setup-error").textContent = error ? message : "";
 }
 function acceptSnapshot(snapshot) {
   S = snapshot.record;
@@ -339,6 +338,7 @@ function synchronize() {
     if (latest.token === lastToken) return;
     acceptSnapshot(latest);
     renderAll();
+    setupWizard?.synchronize();
     if (!S.patient) {
       $("#task-dialog")?.close();
       clearDraft();
@@ -357,6 +357,7 @@ window.addEventListener("storage", (event) => {
 });
 window.addEventListener("focus", synchronize);
 function clearDraft() {
+  draftStartAt = null;
   draftLoaded = false;
   draftDirty = false;
   draftToken = lastToken;
@@ -373,6 +374,7 @@ function openSavedPlan(scroll = true) {
   fillReview(
     {
       patient: S.patient,
+      planStartAt: S.planStartAt,
       meds: S.meds,
       followups: S.followups,
       flags: S.flags,
@@ -402,12 +404,18 @@ const recovery = createRecovery({
 
 async function seed() {
   if (busy) return false;
-  if (S.patient && !confirm("Replace this plan with the fictional sample?"))
+  if (
+    S.patient &&
+    !confirm(
+      translateInterfaceText("Replace this plan with the fictional sample?"),
+    )
+  )
     return false;
   const parsed = parseLocal(SAMPLE_TEXT),
     candidate = emptyRecord();
   Object.assign(candidate, {
     patient: parsed.patient,
+    planStartAt: Date.now(),
     meds: parsed.meds,
     followups: parsed.followups,
     flags: parsed.flags,
@@ -444,15 +452,18 @@ function renderAll() {
 }
 
 function renderHome() {
+  clearTimeout(queueClockTimer);
   const warnings = $("#patientWarnings");
   warnings.hidden = !S.patient || !S.flags.length;
   warnings.innerHTML = S.flags.length
     ? "<b>From the discharge instructions</b>" +
-      S.flags.map((flag) => `<div>${esc(flag)}</div>`).join("")
+      S.flags
+        .map((flag) => `<div data-no-translate>${esc(flag)}</div>`)
+        .join("")
     : "";
   $("#hdrPat").textContent = S.patient
     ? `${S.patient.name} · ${S.patient.age} · discharged ${S.patient.dischargeDate}`
-    : "";
+    : S.setup?.patientName || "";
   if (!S.patient) {
     $("#homeSub").textContent = "No plan loaded yet.";
     $("#homeStats").innerHTML = `
@@ -473,12 +484,21 @@ function renderHome() {
       </div>`;
     $("#homeAlerts").innerHTML = "";
     $("#nextCard").style.display = "none";
+    $("#overdueTasks").innerHTML = "";
     const bs = $("#btnEmptySample"),
       bi = $("#btnEmptyImport");
     if (bs)
       bs.onclick = async () => {
         if (await seed()) renderAll();
       };
+    if (S.setup?.completed) {
+      $("#homeSub").textContent = `Welcome, ${S.setup.patientName}.`;
+      $("#homeStats h3").textContent = "Your space for care is ready.";
+      $("#homeStats p").textContent =
+        "Add discharge instructions when you’re ready to build the schedule. You can add or update your care team at any time.";
+      $("#homeStats ol").remove();
+      bi.textContent = "Add discharge instructions";
+    }
     if (bi)
       bi.onclick = () => {
         document.querySelector('button[data-t="import"]').click();
@@ -487,23 +507,31 @@ function renderHome() {
   }
   const today = localISO(new Date());
   const day = today;
-  const tt = S.tasks.filter((t) => t.date === day);
+  const tt = S.tasks.filter((t) => t.date === day && t.status !== "discarded");
   const done = tt.filter((t) => t.status === "done").length;
   const pct = tt.length ? Math.round((done / tt.length) * 100) : 0;
-  const next = tt.find((t) => t.status === "todo");
+  const { next, overdue } = homeQueue(S);
+  $("#overdueTasks").innerHTML = overdue
+    .map(
+      (task) =>
+        `<div class="card overdue-card"><div class="timing-status overdue">Past due · ${esc(task.date)} · ${esc(task.time)}</div><h3 data-no-translate>${esc(task.label)}</h3><button class="act" data-overdue-done="${esc(task.id)}">Mark done</button></div>`,
+    )
+    .join("");
+  $("#overdueTasks")
+    .querySelectorAll("[data-overdue-done]")
+    .forEach((button) => {
+      button.onclick = () => openTask(button.dataset.overdueDone, "done");
+    });
 
   const logV = findLogViolations(S);
-  const now = new Date(),
-    nowMin = now.getHours() * 60 + now.getMinutes();
-  const missed = findMissed(S, nowMin);
 
   $("#homeSub").textContent =
-    `${tt.length} doses and checks on ${day} · ${S.tasks.length} in the 30-day plan`;
+    `${tt.length} doses and checks on ${day} · ${S.tasks.filter((task) => task.status !== "discarded").length} in the 30-day plan`;
   $("#homeStats").innerHTML = `
     <div class="stat"><div class="k">Today</div><div class="v">${done}<small>/${tt.length} done</small></div></div>
     <div class="stat"><div class="k">Adherence</div><div class="v">${pct}<small>%</small></div></div>
     <div class="stat"><div class="k">Rule breaks</div><div class="v" style="color:${logV.length ? "#b3261e" : "#1b7f4b"}">${logV.length}</div></div>
-    <div class="stat"><div class="k">Past due</div><div class="v" style="color:${missed.length ? "#9a5b00" : "#1b7f4b"}">${missed.length}</div></div>`;
+    <div class="stat"><div class="k">Past due</div><div class="v" style="color:${overdue.length ? "#9a5b00" : "#1b7f4b"}">${overdue.length}</div></div>`;
 
   let a = "";
   if (S.schedule?.violations?.length)
@@ -521,14 +549,6 @@ function renderHome() {
           `<div class="banner"><b>Record breaks a timing rule</b> — ${esc(v.msg)}</div>`,
       )
       .join("");
-  if (missed.length)
-    a += missed
-      .slice(0, 2)
-      .map(
-        (m) =>
-          `<div class="banner amber"><b>Dose still open</b> — ${esc(m.msg)}</div>`,
-      )
-      .join("");
   if (!a)
     a =
       '<div class="banner green"><b>No timing alerts in the recorded doses.</b></div>';
@@ -536,148 +556,235 @@ function renderHome() {
 
   if (next) {
     $("#nextCard").style.display = "block";
-    $("#nextTitle").textContent = `${next.time} · ${next.label}`;
+    $("#nextTitle").textContent =
+      `${next.date === today ? "" : next.date + " · "}${next.time} · ${next.label}`;
+    const timing = timingStatus(S, next);
+    $("#nextCard").className =
+      `card hd next-card ${timing.phase} ${timing.phase === "due" && !timing.fits ? "restricted" : ""}`;
+    $("#nextStatus").className = `timing-status ${timing.phase}`;
+    $("#nextStatus").textContent =
+      timing.phase === "due"
+        ? timing.fits
+          ? "Due now · within target window"
+          : "Timing restriction · review before recording"
+        : "Upcoming";
     const who = S.team.find((m) => m.id === next.who);
     $("#nextWho").textContent = who
       ? `Assigned to ${who.name} (${who.rel})`
       : "Unassigned";
+    const nextBoundary =
+      taskDue(next) - Date.now() > 300000
+        ? taskDue(next) - 300000
+        : taskDue(next) + 1;
+    queueClockTimer = setTimeout(
+      refreshClock,
+      Math.max(25, Math.min(30000, nextBoundary - Date.now())),
+    );
     $("#btnNextDone").onclick = () => openTask(next.id, "done");
     $("#btnNextSkip").onclick = () => openTask(next.id, "skip");
   } else $("#nextCard").style.display = "none";
 }
 
+const medicineColors = [
+  "#168dcc",
+  "#2c79af",
+  "#4f9bd3",
+  "#e77c6b",
+  "#79b5e3",
+  "#c66b63",
+  "#266597",
+  "#ed9c8c",
+  "#367da8",
+  "#bb655c",
+  "#5594ba",
+  "#d88679",
+  "#224f79",
+  "#e9ad9f",
+  "#73b8d8",
+];
 function renderSchedule() {
   const host = $("#scheduleBody");
   if (!S.meds.length || !S.schedule) {
     host.innerHTML = '<span class="small">Compile a plan first.</span>';
     return;
   }
-  const bad = S.schedule.bad || {};
-  const scheduleDate = S.tasks.some(
-    (task) => task.date === localISO(new Date()),
-  )
-    ? localISO(new Date())
-    : S.patient.dischargeDate;
-  const displayTimes = Object.fromEntries(
-    S.meds.map((m) => [
-      m.id,
+  const dates = [
+    ...new Set(
       S.tasks
-        .filter(
-          (task) =>
-            task.kind === "med" &&
-            task.medId === m.id &&
-            task.date === scheduleDate,
-        )
-        .map((task) => task.time),
-    ]),
+        .filter((task) => task.status !== "discarded")
+        .map((task) => task.date),
+    ),
+  ].sort();
+  const selected = host.querySelector("#scheduleDate")?.value;
+  const date = dates.includes(selected)
+    ? selected
+    : dates.includes(localISO(new Date()))
+      ? localISO(new Date())
+      : dates[0] || localISO(new Date());
+  const violations = findLogViolations(S);
+  const tasks = S.tasks.filter(
+    (task) => task.date === date && task.status !== "discarded",
   );
-
-  const pins = [];
-  Object.entries(displayTimes).forEach(([medId, ts]) => {
-    ts.forEach((t) => {
-      const left = ((toMin(t) / 1440) * 100).toFixed(2);
-      pins.push(`<div class="pin ${bad[medId] ? "bad" : ""}" style="left:${left}%">
-        <div class="dot"></div><div class="lb">${t}</div></div>`);
-    });
-  });
-  let lbl = "";
-  [0, 6, 12, 18, 24].forEach((h) => {
-    lbl += `<div class="hourlbl" style="left:${((h / 24) * 100).toFixed(2)}%">${String(h).padStart(2, "0")}</div>`;
-  });
-
-  const rows = S.meds
-    .map((m) => {
-      const ts = (displayTimes[m.id] || []).join(", ") || "—";
-      return `<tr class="${bad[m.id] ? "conflict" : ""}">
-      <td><b>${esc(m.drug)}</b><div class="small">${esc(m.dose)}</div></td>
-      <td>${esc(m.freq)}</td>
-      <td>${m.meal === "with" ? "with food" : m.meal === "before" ? "before food" : m.meal === "after" ? "after food" : "—"}</td>
-      <td>${m.gapH ? esc(m.gapH) + " h from " + esc(m.gapTarget || "all others") : "—"}</td>
-      <td class="mono"><b>${esc(ts)}</b></td></tr>`;
+  const dayMeds = S.meds.filter((med) =>
+    tasks.some((task) => task.kind === "med" && task.medId === med.id),
+  );
+  const groups = dayMeds.map((med) => ({
+    kind: "med",
+    medId: med.id,
+    label: med.drug,
+    detail: med.dose,
+    color:
+      medicineColors[
+        S.meds.findIndex((item) => item.id === med.id) % medicineColors.length
+      ],
+  }));
+  for (const group of [
+    {
+      kind: "weight",
+      label: "Weight check",
+      detail: "Daily care",
+      color: "#487ca5",
+    },
+    {
+      kind: "symptom",
+      label: "Symptom check",
+      detail: "Daily care",
+      color: "#68b2ef",
+    },
+    {
+      kind: "visit",
+      label: "Follow-ups",
+      detail: "Appointment",
+      color: "#da897c",
+    },
+  ])
+    if (tasks.some((task) => task.kind === group.kind)) groups.push(group);
+  const doseCount = tasks.filter((task) => task.kind === "med").length;
+  const pins = tasks
+    .map((task) => {
+      const lane = groups.findIndex(
+        (group) =>
+          group.kind === task.kind &&
+          (task.kind !== "med" || group.medId === task.medId),
+      );
+      const group = groups[lane];
+      if (!group) return "";
+      const title = task.kind === "med" ? group.label : task.label;
+      const actual = task.status === "done" && task.doneAt != null;
+      const time = actual
+        ? new Date(task.doneAt).toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: false,
+          })
+        : task.time;
+      const conflict =
+        task.kind === "med" &&
+        (violations.some(
+          (item) => item.a?.id === task.id || item.b?.id === task.id,
+        ) ||
+          (actual && !timingStatus(S, task, task.doneAt).fits));
+      const label = actual
+        ? "Done"
+        : task.status === "skip"
+          ? "Skipped"
+          : taskDue(task) < Date.now()
+            ? "Past due"
+            : "Planned";
+      return `<button class="medicine-box ${conflict ? "has-conflict" : ""} ${esc(task.status)}" data-chart-task="${esc(task.id)}" data-kind="${esc(task.kind)}" data-minute="${toMin(time)}" data-lane="${lane}" style="--medicine-color:${group.color}" aria-label="${esc(title)} ${esc(time)} ${label}${conflict ? ", timing conflict" : ""}"><b ${task.kind === "med" || task.kind === "visit" ? "data-no-translate" : ""}>${esc(title)}</b><span ${task.kind === "med" ? "data-no-translate" : ""}>${esc(group.detail)}</span><span class="medicine-box-status">${esc(time)} · ${label}</span>${actual ? `<small>Target ${esc(task.time)}${localISO(new Date(task.doneAt)) !== date ? " · recorded " + esc(localISO(new Date(task.doneAt))) : ""}</small>` : ""}${conflict ? '<small class="box-conflict">Timing conflict</small>' : ""}</button>`;
     })
     .join("");
-
-  const viol = S.schedule.violations || [];
-  host.innerHTML = `
-    <div class="tl">${lbl}${pins.join("")}</div>
-    <div class="small" style="margin:8px 0 12px">
-      Schedule for ${esc(scheduleDate)}.
-      ${viol.length ? '<b style="color:#b3261e">Red pins break a rule.</b>' : "Supported rules satisfied."}</div>
-    ${resolutionHTML(S.schedule)}
-    <div class="card">
-      <h2 style="font-size:15px">Rules the compiler had to honour</h2>
-      <table><thead><tr><th>Drug</th><th style="width:130px">How often</th><th style="width:110px">Meal</th>
-      <th style="width:140px">Spacing</th><th style="width:150px">Compiled time</th></tr></thead>
-      <tbody>${rows}</tbody></table>
-    </div>
-    <div class="card hd">
-      <div class="small">Automatic resolution preserves the entered doses and timing rules.</div>
-      <div style="margin-top:9px">
-        <button class="act" id="btnRecompile">Auto-resolve schedule</button>
-        <button class="ghost" id="btnTestMove" style="margin-left:6px">Try a conflict example</button>
-      </div>
-      <div class="small" id="recompMsg" style="margin-top:8px"></div>
-    </div>`;
-
-  $("#btnRecompile").onclick = async () => {
-    if (busy) return;
-    const resolved = compileSchedule(S.meds, S.schedule.times);
-    if (!resolved.ok) {
-      $("#recompMsg").innerHTML = resolutionHTML(resolved);
-      return;
-    }
-    const candidate = { ...S, schedule: resolved };
-    try {
-      candidate.tasks = rebuildTasks(candidate);
-    } catch (error) {
-      $("#recompMsg").textContent = error.message;
-      return;
-    }
-    if (await save(candidate)) renderAll();
-  };
-  $("#btnTestMove").onclick = () => {
-    const spaced = S.meds.find((m) => Number(m.gapH) > 0);
-    if (!spaced) {
-      $("#recompMsg").textContent = "Add a spacing rule to try this example.";
-      return;
-    }
-    const anchor = S.meds.find(
-      (m) =>
-        m.id !== spaced.id &&
-        (!spaced.gapTarget ||
-          m.drug.toLowerCase() === spaced.gapTarget.toLowerCase()),
-    );
-    if (!anchor) {
-      $("#recompMsg").textContent =
-        "Choose the other medication in the spacing rule.";
-      return;
-    }
-    const requested = structuredClone(S.schedule.times);
-    requested[spaced.id][0] = requested[anchor.id][0];
-    requested[spaced.id].sort();
-    const resolved = compileSchedule(S.meds, requested);
-    const caught = checkTimes(S.meds, requested, S.meals || DEFAULT_MEALS);
-    $("#recompMsg").innerHTML =
-      "<p><b>Example only · saved plan unchanged.</b></p>" +
-      caught.map((v) => `<div class="small">${esc(v.msg)}</div>`).join("") +
-      resolutionHTML(resolved);
-  };
+  host.innerHTML = `<div class="schedule-toolbar"><label>Day <select id="scheduleDate">${(dates.length ? dates : [date]).map((day) => `<option ${day === date ? "selected" : ""}>${esc(day)}</option>`).join("")}</select></label><span class="small">${dayMeds.length} medicines · ${doseCount} doses${tasks.length > doseCount ? ` · ${tasks.length - doseCount} care event${tasks.length - doseCount === 1 ? "" : "s"}` : ""}</span></div>
+    <div class="medicine-legend">${groups.map((group) => `<span ${group.kind === "med" ? "data-no-translate" : ""}><i style="background:${group.color}"></i>${esc(group.label)}</span>`).join("")}</div>
+    <div class="timeline-scroll"><div class="medicine-timeline" data-date="${esc(date)}" style="--lanes:${Math.max(1, groups.length)}" role="group" aria-label="Daily care timeline">${Array.from({ length: 13 }, (_, i) => `<div class="medicine-hour" style="left:${(i / 12) * 100}%"><span>${String(i * 2).padStart(2, "0")}:00</span></div>`).join("")}${pins}<div class="current-time-line" hidden><span></span></div></div></div>
+    <p class="small chart-caption">Completed items appear at their recorded time. Click a box to record or edit.</p>
+    <div class="schedule-actions"><button class="act" id="btnRecompile">Auto-resolve schedule</button><span class="small" id="recompMsg" role="status"></span></div>`;
+  observeMedicineTimeline(host.querySelector(".medicine-timeline"));
+  updateCurrentTime();
+  $("#scheduleDate").onchange = renderSchedule;
+  host.querySelectorAll("[data-chart-task]").forEach((button) => {
+    button.onclick = () => openTask(button.dataset.chartTask);
+  });
+  $("#btnRecompile").onclick = () => openResolution();
+}
+function updateCurrentTime() {
+  const chart = document.querySelector(".medicine-timeline");
+  if (!chart) return;
+  for (const box of chart.querySelectorAll(".medicine-box.todo")) {
+    const task = S.tasks.find((item) => item.id === box.dataset.chartTask);
+    if (task)
+      box.querySelector(".medicine-box-status").textContent =
+        `${task.time} · ${taskDue(task) < Date.now() ? "Past due" : "Planned"}`;
+  }
+  const line = chart.querySelector(".current-time-line"),
+    now = new Date();
+  line.hidden = chart.dataset.date !== localISO(now);
+  line.style.left = `${((now.getHours() * 60 + now.getMinutes() + now.getSeconds() / 60) / 1440) * 100}%`;
+  line.querySelector("span").textContent =
+    `Now ${now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+}
+function openResolution(reasons = []) {
+  if (busy || document.querySelector("#resolution-dialog")) return;
+  const token = lastToken;
+  const preview = resolveRemaining(S);
+  const dialog = document.createElement("dialog");
+  dialog.id = "resolution-dialog";
+  dialog.setAttribute("aria-labelledby", "resolution-title");
+  dialog.innerHTML = `<h2 id="resolution-title">${reasons.length ? "Schedule conflict" : "Resolve remaining schedule"}</h2>${reasons.map((reason) => `<p>${esc(reason)}</p>`).join("")}<p>${reasons.length ? "The completion was saved at the actual time. " : ""}Completed records stay fixed.</p>${preview.ok ? (preview.adjustments.length ? `<p>Apply these changes to pending doses?</p><div class="resolution-changes">${preview.adjustments.map((change) => `<p data-no-translate><b>${esc(change.label)}</b><br>${esc(change.date)} · ${esc(change.before)} → ${esc(change.after)}</p>`).join("")}</div>` : "<p>No pending doses need to move under the entered timing rules.</p>") : `<p role="alert">${esc(preview.message)}</p>`}<p id="resolution-error" role="alert"></p><div class="dialog-actions">${preview.ok && preview.adjustments.length ? '<button class="act" data-apply-resolution>Apply automatic resolution</button>' : ""}<button class="ghost" data-dismiss-resolution>${reasons.length ? "Keep current schedule" : "Close"}</button></div>`;
+  document.body.append(dialog);
+  dialog.querySelector("[data-dismiss-resolution]").onclick = () =>
+    dialog.close();
+  dialog.addEventListener("close", () => dialog.remove());
+  const apply = dialog.querySelector("[data-apply-resolution]");
+  if (apply)
+    apply.onclick = async () => {
+      if (busy) return;
+      if (token !== lastToken) {
+        dialog.querySelector("#resolution-error").textContent =
+          "Another tab changed the plan. Close and reopen this preview.";
+        return;
+      }
+      if (
+        preview.adjustments.some(
+          (change) =>
+            taskDue(preview.state.tasks.find((task) => task.id === change.id)) <
+            Date.now(),
+        )
+      ) {
+        dialog.querySelector("#resolution-error").textContent =
+          "Time has moved on. Close and reopen this preview for updated times.";
+        return;
+      }
+      if (await save(preview.state, token)) {
+        dialog.close();
+        renderAll();
+        notify(
+          `Schedule updated · ${preview.adjustments.length} pending doses moved.`,
+        );
+      } else
+        dialog.querySelector("#resolution-error").textContent =
+          $("#saveStatus").textContent;
+    };
+  dialog.showModal();
 }
 
 function renderTasks() {
   const host = $("#taskList"),
     sub = $("#taskSub");
-  if (!S.tasks.length) {
-    sub.textContent = "Compile a plan first.";
+  const activeTasks = S.tasks.filter((task) => task.status !== "discarded");
+  if (!activeTasks.length) {
+    sub.textContent = S.patient
+      ? "No active items in this plan."
+      : "Compile a plan first.";
     host.innerHTML = "";
     $("#conflictBox").innerHTML = "";
     $("#dayFilter").innerHTML = "";
     return;
   }
-  const dates = [...new Set(S.tasks.map((t) => t.date))].sort();
+  const dates = [...new Set(activeTasks.map((t) => t.date))].sort();
   const sel = $("#dayFilter");
   const cur = sel.value && dates.includes(sel.value) ? sel.value : dates[0];
-  sub.textContent = `${S.tasks.length} doses and checks over ${dates.length} days`;
+  sub.textContent = `${activeTasks.length} doses and checks over ${dates.length} days`;
 
   const v = findLogViolations(S);
   $("#conflictBox").innerHTML = v.length
@@ -700,7 +807,7 @@ function renderTasks() {
           `<option value="${d}" ${list.includes(d) ? "selected" : ""}>${d}</option>`,
       )
       .join("");
-    const rows = S.tasks.filter((t) => list.includes(t.date));
+    const rows = activeTasks.filter((t) => list.includes(t.date));
     host.innerHTML = `<div class="table-scroll"><table><thead><tr><th style="width:56px">Time</th><th>Task</th>
       <th style="width:138px">Assigned</th><th style="width:88px">Status</th><th style="width:138px">Action</th></tr></thead>
       <tbody>${rows
@@ -708,7 +815,7 @@ function renderTasks() {
           const bad = v.some((x) => x.a?.id === t.id || x.b?.id === t.id);
           return `<tr class="${bad ? "conflict" : ""}">
           <td class="mono">${t.time}</td>
-          <td>${esc(t.label)}${t.doneAt != null ? `<div class="small">Recorded ${esc(new Date(t.doneAt).toLocaleString())}${t.recordedByName ? " · " + esc(t.recordedByName) : ""}</div>` : ""}${t.kind === "visit" ? ' <span class="small">(appointment)</span>' : ""}</td>
+          <td data-no-translate>${esc(t.label)}${t.doneAt != null ? `<div class="small">Recorded ${esc(new Date(t.doneAt).toLocaleString())}${t.recordedByName ? " · " + esc(t.recordedByName) : ""}</div>` : ""}${t.kind === "visit" ? ' <span class="small">(appointment)</span>' : ""}</td>
           <td><select data-who="${esc(t.id)}"><option value="" ${!t.who ? "selected" : ""}>Unassigned</option>${S.team
             .filter((person) => !person.archived || person.id === t.who)
             .map(
@@ -771,7 +878,7 @@ function renderTeam() {
     <tbody>${load
       .map(
         (l) => `<tr>
-      <td><b>${esc(l.name)}</b><div class="small">${esc(l.rel)}</div></td>
+      <td data-no-translate><b>${esc(l.name)}</b><div class="small">${esc(l.rel)}</div></td>
       <td><div class="barwrap"><div class="bar" style="width:${Math.round((l.total / max) * 140)}px"></div>
           <span class="small">${l.total}</span></div></td>
       <td>${l.total}</td><td>${l.done}</td><td>${l.rate}%</td><td>${l.activeDays}</td>
@@ -790,6 +897,8 @@ $$("nav button").forEach(
       $$("nav button").forEach((x) => x.classList.remove("on"));
       $$(".panel").forEach((p) => p.classList.remove("on"));
       b.classList.add("on");
+      $$("nav button").forEach((x) => x.removeAttribute("aria-current"));
+      b.setAttribute("aria-current", "page");
       $("#p-" + b.dataset.t).classList.add("on");
       if (b.dataset.t === "import" && S.patient && !draftLoaded)
         openSavedPlan(false);
@@ -854,6 +963,7 @@ const MEAL_OPTS = [
 ];
 
 function fillReview(d, scroll = true) {
+  draftStartAt = Object.hasOwn(d, "planStartAt") ? d.planStartAt : Date.now();
   draftToken = lastToken;
   draftLoaded = true;
   draftDirty = false;
@@ -867,7 +977,8 @@ function fillReview(d, scroll = true) {
   if (typeof d.weigh === "boolean") $("#fWeigh").checked = d.weigh;
   if (typeof d.symptoms === "boolean") $("#fSymptoms").checked = d.symptoms;
   $("#fWarnings").value = reviewFlags.join("\n");
-  $("#fName").value = d.patient?.name || "";
+  $("#fName").value =
+    (!S.patient && S.setup?.patientName) || d.patient?.name || "";
   $("#fAge").value = d.patient?.age || "";
   $("#fDate").value = d.patient?.dischargeDate || localISO(new Date());
   $("#fLang").value = d.patient?.lang || "en";
@@ -1004,6 +1115,10 @@ $("#btnGenerate").onclick = async () => {
   }
   const candidate = {
     ...S,
+    setup: setupWizard?.active
+      ? { ...S.setup, step: 3, completed: true, patientName: name }
+      : S.setup,
+    planStartAt: draftStartAt,
     patient: {
       name,
       age: $("#fAge").value,
@@ -1040,6 +1155,7 @@ $("#btnGenerate").onclick = async () => {
   draftDirty = false;
   $("#genStatus").textContent = "";
   renderAll();
+  setupWizard?.finishAfterPlan();
   document.querySelector('nav button[data-t="schedule"]').click();
 };
 
@@ -1070,7 +1186,12 @@ $("#backupImport").onchange = (event) => {
     recovery.openImport(file).catch((error) => notify(error.message, true));
 };
 $("#btnReloadPlan").onclick = () => {
-  if (!draftDirty || confirm("Discard this draft and reopen the saved plan?")) {
+  if (
+    !draftDirty ||
+    confirm(
+      translateInterfaceText("Discard this draft and reopen the saved plan?"),
+    )
+  ) {
     synchronize();
     openSavedPlan();
     notify("Saved plan reopened.");
@@ -1111,7 +1232,9 @@ $("#caregiverList").onclick = async (event) => {
   if (
     button.dataset.personRemove &&
     !confirm(
-      "Remove this caregiver? Pending future assignments will become unassigned; recorded names stay in history.",
+      translateInterfaceText(
+        "Remove this caregiver? Pending future assignments will become unassigned; recorded names stay in history.",
+      ),
     )
   )
     return;
@@ -1134,7 +1257,10 @@ $("#caregiverList").onclick = async (event) => {
 function openTask(id, intent = null) {
   if (busy) return;
   const task = structuredClone(S.tasks.find((t) => t.id === id));
-  if (!task) return;
+  if (!task || task.status === "discarded" || isTaskExpired(task)) {
+    void refreshClock();
+    return;
+  }
   const token = lastToken,
     initialStatus = task.status,
     originalTime = task.doneAt || Date.now(),
@@ -1143,7 +1269,7 @@ function openTask(id, intent = null) {
   dialog.id = "task-dialog";
   dialog.setAttribute("aria-labelledby", "record-title");
   const active = S.team.filter((person) => !person.archived);
-  dialog.innerHTML = `<form id="record-form"><h2 id="record-title">${esc(task.label)}</h2><p class="small">Scheduled ${esc(task.date)} · ${esc(task.time)}</p><label class="field">Status<select name="status"><option value="done">Completed</option><option value="skip">Skipped</option><option value="todo">Pending</option></select></label><label class="field">Recorded by<select name="recordedBy" required><option value="">Choose a name</option>${active.map((person) => `<option value="${esc(person.id)}">${esc(person.name)}</option>`).join("")}</select></label><label class="field" id="actual-field">Actual time (device time)<input name="actualAt" type="datetime-local" required value="${esc(displayTime)}"></label><label class="field" id="clock-choice" hidden>Repeated clock time<select name="occurrence"></select></label><label class="field">${initialStatus === "todo" ? "Note (optional)" : "Reason for correction"}<textarea name="note" rows="2" maxlength="2000">${esc(task.note || "")}</textarea></label>${task.corrections?.length ? `<details><summary>Corrections (${task.corrections.length})</summary>${task.corrections.map((change) => `<p class="small">${esc(new Date(change.at).toLocaleString())} · ${esc(change.by)}: ${esc(change.before.status)} → ${esc(change.after.status)}<br>${esc(change.before.doneAt ? new Date(change.before.doneAt).toLocaleString() : "No recorded time")} → ${esc(change.after.doneAt ? new Date(change.after.doneAt).toLocaleString() : "No recorded time")}<br>${esc(change.reason)}</p>`).join("")}</details>` : ""}<p id="record-error" role="alert"></p><div class="dialog-actions"><button class="act" type="submit">Save record</button><button class="ghost" type="button" data-cancel>Cancel</button></div></form>`;
+  dialog.innerHTML = `<form id="record-form"><h2 id="record-title" data-no-translate>${esc(task.label)}</h2><p class="small">Scheduled ${esc(task.date)} · ${esc(task.time)}</p><label class="field">Status<select name="status"><option value="done">Completed</option><option value="skip">Skipped</option><option value="todo">Pending</option></select></label><label class="field">Recorded by<select name="recordedBy" required><option value="">Choose a name</option>${active.map((person) => `<option value="${esc(person.id)}">${esc(person.name)}</option>`).join("")}</select></label><label class="field" id="actual-field">Actual time (device time)<input name="actualAt" type="datetime-local" required value="${esc(displayTime)}"></label><label class="field" id="clock-choice" hidden>Repeated clock time<select name="occurrence"></select></label><label class="field">${initialStatus === "todo" ? "Note (optional)" : "Reason for correction"}<textarea name="note" rows="2" maxlength="2000">${esc(task.note || "")}</textarea></label>${task.corrections?.length ? `<details><summary>Corrections (${task.corrections.length})</summary>${task.corrections.map((change) => `<p class="small">${esc(new Date(change.at).toLocaleString())} · ${esc(change.by)}: ${esc(change.before.status)} → ${esc(change.after.status)}<br>${esc(change.before.doneAt ? new Date(change.before.doneAt).toLocaleString() : "No recorded time")} → ${esc(change.after.doneAt ? new Date(change.after.doneAt).toLocaleString() : "No recorded time")}<br><span data-no-translate>${esc(change.reason)}</span></p>`).join("")}</details>` : ""}<p id="record-error" role="alert"></p><div class="dialog-actions"><button class="act" type="submit">Save record</button><button class="ghost" type="button" data-cancel>Cancel</button></div></form>`;
   document.body.append(dialog);
   const form = dialog.querySelector("form");
   form.elements.status.value =
@@ -1205,16 +1331,6 @@ function openTask(id, intent = null) {
         throw new Error(
           "This time does not exist in the device’s clock. Enter the actual time.",
         );
-      if (
-        form.elements.status.value !== "todo" &&
-        validateDatedTasks(
-          S,
-          S.tasks.filter((task) => task.date >= localISO(new Date())),
-        ).length
-      )
-        throw new Error(
-          "The saved timetable needs review. Auto-resolve the saved plan before recording; existing records have not changed.",
-        );
       const candidate = recordTask(S, {
         id,
         status: form.elements.status.value,
@@ -1230,6 +1346,11 @@ function openTask(id, intent = null) {
       if (await save(candidate, token)) {
         dialog.close();
         renderAll();
+        const recorded = candidate.tasks.find((item) => item.id === id);
+        if (recorded.kind === "med" && recorded.status === "done") {
+          const timing = timingStatus(candidate, recorded, recorded.doneAt);
+          if (!timing.fits) openResolution(timing.reasons);
+        }
       } else throw new Error($("#saveStatus").textContent);
     } catch (problem) {
       error.textContent = problem.message;
@@ -1241,6 +1362,7 @@ function openTask(id, intent = null) {
 }
 
 load();
+await expireOldTasks();
 if (S.patient && S.tasks.length) {
   renderAll();
 } else {
@@ -1250,25 +1372,74 @@ if (S.patient && S.tasks.length) {
 if (location.protocol !== "file:" && "serviceWorker" in navigator)
   navigator.serviceWorker.register("/sw.js").catch(() => {});
 
+function updateTableScroll(scroll) {
+  if (
+    !scroll?.isConnected ||
+    !scroll.previousElementSibling?.classList.contains("table-hint")
+  )
+    return;
+  const overflowing = scroll.scrollWidth > scroll.clientWidth + 1;
+  scroll.classList.toggle("is-overflowing", overflowing);
+  scroll.previousElementSibling.hidden = !overflowing;
+  if (overflowing) scroll.setAttribute("tabindex", "0");
+  else scroll.removeAttribute("tabindex");
+}
 function scrollTables() {
   for (const table of document.querySelectorAll("table")) {
-    if (!table.closest(".table-scroll")) {
-      const scroll = document.createElement("div");
+    let scroll = table.closest(".table-scroll");
+    if (!scroll) {
+      scroll = document.createElement("div");
       scroll.className = "table-scroll";
       table.before(scroll);
       scroll.append(table);
     }
+    if (!scroll.previousElementSibling?.classList.contains("table-hint")) {
+      const hint = document.createElement("p");
+      hint.className = "table-hint";
+      hint.textContent = "Swipe across the table to see all columns →";
+      hint.hidden = true;
+      scroll.before(hint);
+      scroll.setAttribute("role", "region");
+      scroll.setAttribute(
+        "aria-label",
+        (table.closest(".panel")?.querySelector("h2")?.textContent || "Care") +
+          " table, scroll for more columns",
+      );
+      tableObserver.observe(scroll);
+      tableObserver.observe(table);
+    }
+    updateTableScroll(scroll);
   }
 }
+
 scrollTables();
 
 let lastDisplayedDate = localISO(new Date());
-function refreshClock() {
+async function expireOldTasks() {
+  if (busy || !S.tasks.some((task) => isTaskExpired(task))) return;
+  busy = true;
+  try {
+    const previousToken = lastToken;
+    const snapshot = await recordStore.discardExpired();
+    acceptSnapshot(snapshot);
+    if (draftToken === previousToken) draftToken = lastToken;
+    renderAll();
+  } catch (error) {
+    notify(error.message, true);
+  } finally {
+    busy = false;
+  }
+}
+async function refreshClock() {
   synchronize();
+  await expireOldTasks();
   if (!S.patient) return;
   const date = localISO(new Date());
   renderHome();
+  updateCurrentTime();
   if (date !== lastDisplayedDate) {
+    const daySelect = document.querySelector("#scheduleDate");
+    if (daySelect?.value === lastDisplayedDate) daySelect.value = date;
     renderSchedule();
     scrollTables();
     lastDisplayedDate = date;
@@ -1279,3 +1450,23 @@ window.addEventListener("focus", refreshClock);
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden) refreshClock();
 });
+
+createLanguageControl();
+
+setupWizard = createSetupWizard({
+  snapshot: () => S,
+  saveSetup: async (setup) => {
+    const saved = await save({ ...S, setup });
+    if (saved) {
+      draftToken = lastToken;
+      renderHome();
+    }
+    return saved;
+  },
+  renderTeam,
+  afterFinish: (destination) => {
+    renderAll();
+    document.querySelector(`nav [data-t="${destination}"]`).click();
+  },
+});
+setupWizard.openIfNeeded();

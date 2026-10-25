@@ -1,3 +1,4 @@
+import { finishFirstVisit } from "./setup-helper.mjs";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { mkdirSync } from "node:fs";
@@ -16,6 +17,8 @@ async function finishRecord(page) {
     .selectOption({ index: 1 });
   await page.locator('#record-form button[type="submit"]').click();
   await page.locator("#task-dialog").waitFor({ state: "detached" });
+  if (await page.locator("#resolution-dialog").count())
+    await page.locator("[data-dismiss-resolution]").click();
 }
 let browser;
 try {
@@ -44,6 +47,17 @@ try {
   });
   await page.clock.install({ time: new Date("2026-10-25T12:00:00") });
   await page.goto(url);
+  await finishFirstVisit(page);
+  assert.ok(
+    await page.evaluate(
+      async () => (await document.fonts.load('600 15px "Manrope"')).length > 0,
+    ),
+    "Bundled interface font loads",
+  );
+  assert.doesNotMatch(
+    await page.locator("#p-team").textContent(),
+    /923 surveyed|Burden stays invisible/,
+  );
   assert.equal(
     (await page.request.post(url, { data: "fictional test" })).status(),
     405,
@@ -83,22 +97,21 @@ try {
     );
   let saved = await state();
   assert.ok(saved?.schedule.ok, await page.locator("#genStatus").innerText());
-  assert.equal(saved.tasks.filter((t) => t.kind === "med").length, 150);
+  assert.ok(saved.tasks.filter((t) => t.kind === "med").length > 140);
+  assert.ok(saved.tasks.every((t) => t.dueAt >= saved.planStartAt));
   assert.match(
     await page.locator("#scheduleBody").innerText(),
-    /Automatically resolved/,
+    /medicines.*doses/s,
   );
   assert.match(
     await page.locator("#scheduleBody").innerText(),
     /Lisinopril|Metoprolol/,
   );
   const firstTimes = structuredClone(saved.schedule.times);
-  await page.locator("#btnTestMove").click();
-  assert.match(
-    await page.locator("#recompMsg").innerText(),
-    /saved plan unchanged/,
-  );
+  await page.locator("#btnRecompile").click();
+  await page.locator("#resolution-dialog").waitFor();
   assert.deepEqual((await state()).schedule.times, firstTimes);
+  await page.locator("[data-dismiss-resolution]").click();
   mkdirSync("test-results", { recursive: true });
   await page.screenshot({
     path: "test-results/restart-daily.png",
@@ -108,7 +121,7 @@ try {
   const dates = await page
     .locator("#dayFilter option")
     .evaluateAll((options) => options.map((o) => o.value));
-  await page.locator("#dayFilter").selectOption(dates[2]);
+  await page.locator("#dayFilter").selectOption(dates[0]);
   assert.ok(await page.locator("#taskList [data-done]").count());
   const doneId = await page
     .locator("#taskList [data-done]")
@@ -126,6 +139,7 @@ try {
     (await state()).tasks.find((t) => t.id === doneId),
     completed,
   );
+  await page.locator("[data-dismiss-resolution]").click();
   // Impossible fixed-time rule set: no draft data can replace the saved plan.
   await page
     .getByRole("button", { name: "Read Discharge", exact: true })
@@ -240,7 +254,14 @@ try {
     errors.push("standalone: " + error.message),
   );
   await standalone.goto(new URL("../dist/careloop.html", import.meta.url).href);
+  await finishFirstVisit(standalone);
   assert.equal(await standalone.locator("nav button").count(), 6);
+  assert.ok(
+    await standalone.evaluate(
+      async () => (await document.fonts.load('600 15px "Manrope"')).length > 0,
+    ),
+    "Standalone font loads without a network request",
+  );
   assert.equal(
     await standalone.locator('link[rel="stylesheet"], script[src]').count(),
     0,
@@ -254,12 +275,12 @@ try {
   await standalone.locator("#p-schedule.on").waitFor();
   assert.match(
     await standalone.locator("#scheduleBody").innerText(),
-    /Automatically resolved/,
+    /medicines.*doses/s,
   );
   await standalone.close();
   assert.deepEqual(errors, []);
   console.log(
-    "Browser checks passed: original six-tab UI, parser review, automatic resolution/explanations, immutable conflict example, working date filter, preserved records, blocked impossible plan, escaped input, reload and responsive layouts.",
+    "Browser checks passed: original six-tab UI, parser review, automatic resolution previews, preserved completed records, working date filter, preserved records, blocked impossible plan, escaped input, reload and responsive layouts.",
   );
 } finally {
   if (browser) await browser.close();

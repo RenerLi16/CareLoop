@@ -8,7 +8,11 @@ const numericTime = (t) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3));
 const dayDistance = (a, b) => Math.min(Math.abs(a - b), 1440 - Math.abs(a - b));
 export function generatePlanTasks(state, days = 30) {
   if (!state.patient || !state.schedule?.ok) return [];
-  const start = new Date(state.patient.dischargeDate + "T00:00:00");
+  const startDay =
+    state.planStartAt == null
+      ? state.patient.dischargeDate
+      : dateKey(new Date(state.planStartAt));
+  const start = new Date(startDay + "T00:00:00");
   const end = new Date(start);
   end.setDate(end.getDate() + days);
   const team = state.team.length
@@ -92,11 +96,12 @@ export function generatePlanTasks(state, days = 30) {
     const date = new Date(start);
     date.setDate(date.getDate() + Number(followup.days ?? 7));
     const key = dateKey(date);
+    const dueAt = Math.max(at(key, "09:00"), state.planStartAt ?? 0);
     tasks.push({
       id: "fu-" + followup.id,
       date: key,
-      time: "09:00",
-      dueAt: at(key, "09:00"),
+      time: clockKey(new Date(dueAt)),
+      dueAt,
       kind: "visit",
       label: `Book ${followup.who} follow-up`,
       who: team[0].id,
@@ -104,9 +109,13 @@ export function generatePlanTasks(state, days = 30) {
       doneAt: null,
     });
   }
-  return tasks.sort((a, b) => a.dueAt - b.dueAt || a.id.localeCompare(b.id));
+  return tasks
+    .filter(
+      (task) => state.planStartAt == null || task.dueAt >= state.planStartAt,
+    )
+    .sort((a, b) => a.dueAt - b.dueAt || a.id.localeCompare(b.id));
 }
-export function validateDatedTasks(plan, tasks) {
+export function validateDatedTasks(plan, tasks, { pendingOnly = false } = {}) {
   const errors = [],
     meds = new Map(plan.meds.map((m) => [m.id, m]));
   const doses = tasks
@@ -119,7 +128,11 @@ export function validateDatedTasks(plan, tasks) {
     if (!exact) continue;
     const own = doses.filter((task) => task.medId === med.id);
     for (let i = 1; i < own.length; i++)
-      if (own[i].dueAt - own[i - 1].dueAt !== Number(exact[1]) * 3600000) {
+      if (
+        (!pendingOnly ||
+          (own[i].status === "todo" && own[i - 1].status === "todo")) &&
+        own[i].dueAt - own[i - 1].dueAt !== Number(exact[1]) * 3600000
+      ) {
         errors.push(
           `${own[i].date}: ${med.drug} would no longer have its entered ${exact[1]}-hour interval. The saved records and timetable need review before replacing the plan.`,
         );
@@ -129,7 +142,8 @@ export function validateDatedTasks(plan, tasks) {
 
   for (const task of doses) {
     const med = meds.get(task.medId);
-    if (!med || med.meal === "any") continue;
+    if (!med || med.meal === "any" || (pendingOnly && task.status !== "todo"))
+      continue;
     const meals = Object.entries(plan.meals)
       .filter(
         ([key]) =>
@@ -163,7 +177,11 @@ export function validateDatedTasks(plan, tasks) {
           (r.a === a.medId && r.b === b.medId) ||
           (r.b === a.medId && r.a === b.medId),
       );
-      if (rule && hours < rule.hours)
+      if (
+        rule &&
+        hours < rule.hours &&
+        (!pendingOnly || (a.status === "todo" && b.status === "todo"))
+      )
         errors.push(
           `${b.date}: ${rule.aName} and ${rule.bName} are ${hours.toFixed(2)} hours apart; the entered rule requires ${rule.hours}. No revised plan was saved. Review the instructions and timing settings.`,
         );
@@ -186,7 +204,7 @@ const timingSignature = (plan) =>
       .sort((a, b) => a.id.localeCompare(b.id)),
     meals: plan.meals,
     times: plan.schedule?.times,
-    start: plan.patient?.dischargeDate,
+    start: plan.planStartAt ?? plan.patient?.dischargeDate,
   });
 export function preparePlanTasks(
   previous,
@@ -206,17 +224,26 @@ export function preparePlanTasks(
       ],
     };
   }
+  const unchangedTiming =
+    timingSignature(previous) === timingSignature(candidate);
   const old = new Map(previous.tasks.map((t) => [t.id, t])),
     generated = generatePlanTasks(candidate);
   const tasks = generated.map((task) => {
     const prior = old.get(task.id);
     if (prior && prior.status !== "todo")
       return { ...prior, dueAt: prior.dueAt ?? at(prior.date, prior.time) };
+    if (prior && unchangedTiming) return { ...prior };
     return prior ? { ...task, who: prior.who } : task;
   });
   const errors = validateDatedTasks(
     candidate,
-    tasks.filter((t) => t.date >= today),
+    tasks
+      .filter((t) => t.date >= today)
+      .map((task) =>
+        task.status === "done" && task.doneAt != null
+          ? { ...task, dueAt: task.doneAt }
+          : task,
+      ),
   );
   if (errors.length) return { ok: false, errors };
   const ids = new Set(tasks.map((t) => t.id));
