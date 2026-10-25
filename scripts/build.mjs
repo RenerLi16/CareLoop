@@ -20,22 +20,35 @@ const bundled = [
   "src/scheduler.js",
   "src/instructions.js",
   "src/care-plan.js",
+  "src/live-schedule.js",
   "src/record.js",
   "src/record-store.js",
   "src/file-protection.js",
   "public/recovery.js",
+  "public/i18n.js",
+  "public/timeline.js",
+  "public/setup.js",
   "public/app.js",
 ]
   .map((file) => withoutImports(read(file)))
   .join("\n");
+const inlineStyles = read("public/style.css").replace(
+  /url\("(\/manrope-[a-z]+\.woff2)"\)/g,
+  (_, route) =>
+    `url("data:font/woff2;base64,${sourceAsset(route).toString("base64")}")`,
+);
 const standalone = read("public/index.html")
   .replace(
     /<link rel="stylesheet" href="\/style\.css"\s*\/?>/,
-    () => `<style>${read("public/style.css")}</style>`,
+    () => `<style>${inlineStyles}</style>`,
   )
   .replace(
     '<script type="module" src="/app.js"></script>',
     () => `<script type="module">\n${bundled}\n</script>`,
+  )
+  .replaceAll(
+    "/careloop-logo.png",
+    `data:image/png;base64,${sourceAsset("/careloop-logo.png").toString("base64")}`,
   );
 writeFileSync(new URL("careloop.html", output), standalone);
 console.log(

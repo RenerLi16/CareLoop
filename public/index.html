@@ -3,21 +3,95 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>CareLoop — Discharge-to-Routine Compiler</title>
+    <title>CareLoop</title>
+    <link rel="icon" type="image/png" href="/careloop-logo.png" />
     <link rel="stylesheet" href="/style.css" />
   </head>
   <body>
+    <svg
+      class="page-ribbons"
+      viewBox="0 0 460 320"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <defs>
+        <linearGradient id="ribbon-coral" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#ed8170" stop-opacity="0" />
+          <stop offset="0.18" stop-color="#ed8170" stop-opacity="0.3" />
+          <stop offset="0.72" stop-color="#ed8170" stop-opacity="0.3" />
+          <stop offset="1" stop-color="#ed8170" stop-opacity="0" />
+        </linearGradient>
+        <linearGradient id="ribbon-blue" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#83c9ee" stop-opacity="0" />
+          <stop offset="0.18" stop-color="#83c9ee" stop-opacity="0.4" />
+          <stop offset="0.72" stop-color="#83c9ee" stop-opacity="0.4" />
+          <stop offset="1" stop-color="#83c9ee" stop-opacity="0" />
+        </linearGradient>
+      </defs>
+      <path
+        d="M54 22 C54 180 204 290 430 290"
+        fill="none"
+        stroke="url(#ribbon-coral)"
+        stroke-width="18"
+        stroke-linecap="round"
+      />
+      <path
+        d="M98 22 C98 160 226 246 430 246"
+        fill="none"
+        stroke="url(#ribbon-blue)"
+        stroke-width="22"
+        stroke-linecap="round"
+      />
+    </svg>
+    <dialog id="setup-dialog" aria-labelledby="setup-title">
+      <div class="setup-shell">
+        <div class="setup-top">
+          <div class="setup-wordmark" aria-label="CareLoop">
+            <span
+              class="brand-symbol logo-crop"
+              style="--logo-size: 38px"
+              aria-hidden="true"
+              ><img src="/careloop-logo.png" alt="" width="750" height="774"
+            /></span>
+            <span class="brand-name" data-no-translate>CareLoop</span>
+          </div>
+          <ol id="setup-progress" aria-label="Setup progress"></ol>
+        </div>
+        <div id="setup-stage" class="setup-stage"></div>
+        <p id="setup-error" class="setup-error" role="alert"></p>
+      </div>
+    </dialog>
     <header>
-      <h1>CareLoop</h1>
-      <span class="tag">DISCHARGE → ROUTINE COMPILER</span>
+      <div class="app-brand">
+        <span
+          class="brand-symbol logo-crop"
+          style="--logo-size: 42px"
+          aria-hidden="true"
+          ><img src="/careloop-logo.png" alt="" width="750" height="774"
+        /></span>
+        <div>
+          <h1 class="brand-name" data-no-translate>CareLoop</h1>
+          <p class="brand-slogan" data-no-translate>Discharge to Routine</p>
+        </div>
+      </div>
       <span
         style="margin-left: auto; font-size: 12px; opacity: 0.85"
         id="hdrPat"
       ></span>
+      <label class="language-control"
+        ><span class="language-caption">Language</span
+        ><select id="languageSelect" aria-label="Interface language">
+          <option value="en">English</option>
+          <option value="vi">Tiếng Việt</option>
+          <option value="es">Español</option>
+          <option value="zh">中文</option>
+          <option value="ko">한국어</option>
+        </select></label
+      >
     </header>
 
-    <nav>
-      <button class="on" data-t="home">Today</button>
+    <nav aria-label="Main navigation">
+      <button class="on" data-t="home" aria-current="page">Today</button>
       <button data-t="import">Read Discharge</button>
       <button data-t="schedule">Daily Schedule</button>
       <button data-t="tasks">30-Day Plan</button>
@@ -35,6 +109,7 @@
         </p>
         <div class="grid" id="homeStats"></div>
         <div id="homeAlerts"></div>
+        <div id="overdueTasks"></div>
         <div class="card hd" id="nextCard" style="display: none">
           <div
             class="small"
@@ -57,6 +132,7 @@
           >
             —
           </div>
+          <div id="nextStatus" class="timing-status"></div>
           <div class="small" id="nextWho">—</div>
           <div style="margin-top: 10px">
             <button class="act" id="btnNextDone">Mark done</button>
@@ -70,6 +146,10 @@
 
       <section class="panel" id="p-import">
         <h2>Read discharge instructions</h2>
+        <p class="small language-note" id="languageNote" hidden>
+          Language changes the interface only. Keep medicine names and discharge
+          instructions as written. The reader accepts English instructions.
+        </p>
         <p class="sub">
           Paste the English summary. The reader pulls out drugs and, more
           importantly, the timing rules buried in the sentences — every field
@@ -123,6 +203,8 @@
                   <option value="en">English</option>
                   <option value="es">Español</option>
                   <option value="vi">Tiếng Việt</option>
+                  <option value="zh">中文</option>
+                  <option value="ko">한국어</option>
                 </select>
               </div>
             </div>
@@ -228,10 +310,7 @@
 
       <section class="panel" id="p-schedule">
         <h2>Daily schedule</h2>
-        <p class="sub">
-          The compiler places every dose so that all timing rules hold at once.
-          Move one thing and it re-checks the whole day.
-        </p>
+
         <div id="scheduleBody">
           <span class="small">Compile a plan first.</span>
         </div>
@@ -262,22 +341,16 @@
         <div class="card" id="teamCard">
           <span class="small">Compile a plan first.</span>
         </div>
-        <div class="card hd">
-          <div style="font-size: 12.5px; color: var(--muted)">
-            In 923 surveyed Orange County caregivers, 71% said caregiving is
-            emotionally difficult and 41% felt isolated — but the top complaint
-            was having no time of their own and not knowing what resources
-            exist. Burden stays invisible until someone breaks.
-          </div>
-        </div>
         <details class="card">
           <summary>Edit caregivers</summary>
-          <div id="caregiverList"></div>
-          <form id="caregiverAdd" class="caregiver-edit">
-            <label>Name<input name="name" required maxlength="100" /></label
-            ><label>Relationship<input name="rel" maxlength="100" /></label
-            ><button class="act" type="submit">Add caregiver</button>
-          </form>
+          <div id="caregiverEditor">
+            <div id="caregiverList"></div>
+            <form id="caregiverAdd" class="caregiver-edit">
+              <label>Name<input name="name" required maxlength="100" /></label
+              ><label>Relationship<input name="rel" maxlength="100" /></label
+              ><button class="act" type="submit">Add caregiver</button>
+            </form>
+          </div>
         </details>
       </section>
 
@@ -330,8 +403,8 @@
             <tr>
               <td><b>Keep the family’s record</b></td>
               <td>
-                Caregiver labels and task status on this device; translation and
-                remote sharing are not included
+                Caregiver labels and task status on this device; remote sharing
+                is not included
               </td>
             </tr>
           </table>

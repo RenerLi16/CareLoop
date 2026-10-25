@@ -13,6 +13,12 @@ npm start
 
 Open http://127.0.0.1:3000/. Close tabs running an older CareLoop version before reopening.
 
+## Phone and tablet layout
+
+On screens up to 900px wide, the original six tabs stay fixed along the bottom. Tables scroll within their own area when needed, with the first column pinned and a swipe hint. Form controls use larger text and touch targets. Desktop keeps the original top navigation.
+
+The interface uses a locally bundled Manrope variable font (SIL Open Font License in `public/Manrope-OFL.txt`). The build embeds the font in the standalone copy so typography also works offline.
+
 ## Folder guide
 
 | Folder     | Contents                                                                    |
@@ -44,6 +50,24 @@ STATIC_DIR=dist npm start
 
 Patient records stay in the browser. Different browsers, addresses, and devices do not share a record. Browser storage behavior for local files varies, so use the same browser and address consistently. Check the final HTTPS address on the intended tablet before release.
 
+## First-visit setup
+
+New browsers open a four-screen setup flow: a CareLoop welcome, the patient’s name, the existing care-team editor, and the existing discharge reader. Screens fade out and in, and follow the device’s reduced-motion preference. The name field enables its forward arrow only after a nonblank name is entered. Care team and discharge steps can be skipped.
+
+Progress, patient name, and added caregivers stay in the local record. Skipping discharge opens the app with an invitation to add instructions later. Building a plan inside setup finishes the flow and opens Daily Schedule. Existing care plans go straight to the app. There is no repeat setup on reload after completion.
+
+## Interface language and schedule labels
+
+The upper-right selector switches the interface between English, Vietnamese, Spanish, Simplified Chinese, and Korean. The preference stays in this browser, separate from care records. Patient names, medicine names, notes, and discharge instructions stay as entered; the instruction reader still accepts structured English. Translations are bundled locally and work offline.
+
+Daily Schedule shows every medicine dose, weight check, symptom check, and follow-up in a colored box. Medicines keep their own colors; daily care and follow-ups use distinct event colors. Nearby events stack into additional rows, so simultaneous follow-ups stay readable. Completed doses appear at their actual recorded time, alongside their original target. A live current-time line moves across today’s chart. Choose a date to see the saved plan for that day; swipe the timeline horizontally on phones.
+
+New discharge plans start at the instant they are read into the app. The original discharge date remains patient information; medicine and daily-check slots earlier than the load time are omitted. Reopening or rebuilding the saved plan retains its original load time.
+
+Unfinished items more than 24 elapsed hours past their scheduled time are automatically discarded on opening the app, while it is open, and on saving. They disappear from active views and remain as internal discarded entries so rebuilding cannot recreate them. Completed and explicitly skipped records are preserved.
+
+Today lists every past-due pending item in a yellow card with its own Mark done button. Next up shows the earliest pending item at or after the current time, including the following day when needed. Upcoming is blue; the five-minute target window is green when the entered timing restrictions also fit.
+
 ## Scheduling
 
 Compile schedule and Auto-resolve schedule search for times satisfying the supported instructions. They preserve doses and prescribed rules, explain moved times, and block saving if a solution is not found.
@@ -53,10 +77,12 @@ Compile schedule and Auto-resolve schedule search for times satisfying the suppo
 - Breakfast, lunch, and dinner default to 08:00, 12:00, and 18:00 and can be reviewed under Meal times.
 - Supported assumptions: with food means within 30 minutes; before/after food means 15–60 minutes; morning is 08:00 and bedtime is 22:00. Ordinary twice/three-times-daily plans use daytime slots at least four hours apart. Review these assumptions against the written instructions.
 - Food and spacing rules are rechecked across the dated plan. Clock-change conflicts block saving. Search uses 15-minute slots and a bounded search; failure does not establish that a prescription is impossible.
-- Rebuilding preserves records. Changes around a medicine already recorded today require review rather than automatic dose compensation.
-- Try a conflict example is a separate preview and never changes the saved plan.
+- Recording outside the target window or an entered timing restriction saves the actual event, then opens a conflict review. The preview offers revised times for pending doses, with an explicit Apply or Keep current schedule choice.
+- Runtime resolution anchors completed doses at their actual times. It preserves each pending dose, day, caregiver assignment, food and spacing restrictions, and exact elapsed intervals. Past-day overdue tasks remain open until their 24-hour expiry; it does not invent replacement doses or relax instructions to make a plan fit.
+- Runtime search uses five-minute candidate times plus exact interval and spacing boundaries. A bounded search that finds no solution leaves the saved timetable unchanged.
+- Editing the prescription after a medicine is already recorded today still requires review. Unchanged rebuilds preserve runtime adjustments and completion records.
 
-The reader handles structured English lines. Unsupported wording remains for review. Paragraph understanding, photo reading, translation, calendar export, and remote sharing are not included. Follow-ups represent booking deadlines.
+The reader handles structured English lines. Unsupported wording remains for review. Paragraph understanding, photo reading, translation of entered care instructions, calendar export, and remote sharing are not included. Follow-ups represent booking deadlines.
 
 ## Records and backups
 
@@ -80,6 +106,9 @@ npm run test:browser
 npm run test:release
 npm run test:records
 npm run test:upgrade
+npm run test:mobile
+npm run test:live
+npm run test:language
 npm run format:check
 ```
 

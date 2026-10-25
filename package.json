@@ -17,7 +17,12 @@
     "format:check": "prettier --check src public tests scripts package.json README.md",
     "test:release": "node tests/release-browser.mjs",
     "test:records": "node tests/records-browser.mjs",
-    "test:upgrade": "node tests/upgrade-browser.mjs"
+    "test:upgrade": "node tests/upgrade-browser.mjs",
+    "test:setup": "node tests/setup-browser.mjs",
+    "test:lifecycle": "node tests/task-lifecycle-browser.mjs",
+    "test:live": "node tests/live-schedule-browser.mjs",
+    "test:mobile": "node tests/mobile-browser.mjs",
+    "test:language": "node tests/language-timeline-browser.mjs"
   },
   "devDependencies": {
     "prettier": "^3.6.2"

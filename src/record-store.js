@@ -1,4 +1,9 @@
-import { RECORD_KEY, emptyRecord, normalizeRecord } from "./record.js";
+import {
+  RECORD_KEY,
+  emptyRecord,
+  normalizeRecord,
+  discardExpiredTasks,
+} from "./record.js";
 export class StaleRecordError extends Error {
   constructor() {
     super(
@@ -27,7 +32,7 @@ export function createRecordStore(
     return locks.request("careloop-record-write", { mode: "exclusive" }, () => {
       const current = read();
       if (current.token !== expectedToken) throw new StaleRecordError();
-      const candidate = normalizeRecord(record);
+      const candidate = discardExpiredTasks(normalizeRecord(record));
       candidate.revision = current.record.revision + 1;
       const token = JSON.stringify(candidate);
       try {
@@ -40,5 +45,24 @@ export function createRecordStore(
       return { record: candidate, token };
     });
   }
-  return { read, replace };
+  async function discardExpired(now = Date.now()) {
+    if (!locks?.request)
+      throw new Error("Safe saving is unavailable in this browser.");
+    return locks.request("careloop-record-write", { mode: "exclusive" }, () => {
+      const current = read();
+      const candidate = discardExpiredTasks(current.record, now);
+      if (candidate === current.record) return current;
+      candidate.revision = current.record.revision + 1;
+      const token = JSON.stringify(candidate);
+      try {
+        storage.setItem(RECORD_KEY, token);
+      } catch {
+        throw new Error(
+          "Expired items could not be saved. Browser storage may be full or unavailable.",
+        );
+      }
+      return { record: candidate, token };
+    });
+  }
+  return { read, replace, discardExpired };
 }

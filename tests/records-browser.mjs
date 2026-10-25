@@ -1,3 +1,4 @@
+import { finishFirstVisit } from "./setup-helper.mjs";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { readFileSync, mkdirSync } from "node:fs";
@@ -17,7 +18,7 @@ const snapshot = (page) =>
 const clickTab = (page, id) => page.locator(`nav [data-t="${id}"]`).click();
 async function addPerson(page, name) {
   await clickTab(page, "team");
-  const details = page.locator("#caregiverAdd").locator("..");
+  const details = page.locator("#p-team details");
   if (!(await details.evaluate((element) => element.open)))
     await details.locator("summary").click();
   await page.locator('#caregiverAdd [name="name"]').fill(name);
@@ -38,6 +39,13 @@ async function saveDialog(page, { name = "Lan", time, note } = {}) {
   if (note !== undefined)
     await page.locator('#record-form [name="note"]').fill(note);
   await page.locator('#record-form button[type="submit"]').click();
+  await page.waitForFunction(
+    () =>
+      !document.querySelector("#task-dialog") ||
+      document.querySelector("#record-error")?.textContent,
+  );
+  if (await page.locator("#resolution-dialog").count())
+    await page.locator("[data-dismiss-resolution]").click();
 }
 async function openBackup(page, file) {
   await clickTab(page, "about");
@@ -76,8 +84,9 @@ try {
     page = await context.newPage(),
     errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
-  await page.clock.install({ time: new Date("2026-10-25T19:00:00Z") });
+  await page.clock.install({ time: new Date("2026-10-25T14:00:00Z") });
   await page.goto(url);
+  await finishFirstVisit(page, "Fictional Record Test");
   await clickTab(page, "import");
   await page
     .locator("#rawText")
@@ -89,6 +98,7 @@ try {
   await page.locator("#fSymptoms").uncheck();
   await page.locator("#btnGenerate").click();
   await page.locator("#p-schedule.on").waitFor();
+  await page.clock.fastForward(5 * 3600000);
   await addPerson(page, "Lan");
   await addPerson(page, "Minh");
   let state = await snapshot(page);
@@ -275,6 +285,7 @@ try {
   fresh.on("pageerror", (e) => errors.push(e.message));
   await fresh.clock.install({ time: new Date("2026-11-01T10:30:00Z") });
   await fresh.goto(url);
+  await finishFirstVisit(fresh, "Fictional Record Test");
   await openBackup(fresh, file);
   await unlock(fresh);
   await fresh.locator('[data-recovery-form="restore"]').waitFor();
@@ -339,6 +350,8 @@ try {
     .selectOption({ index: 1 });
   await fresh.locator('#record-form button[type="submit"]').click();
   await fresh.locator("#task-dialog").waitFor({ state: "detached" });
+  if (await fresh.locator("#resolution-dialog").count())
+    await fresh.locator("[data-dismiss-resolution]").click();
   assert.equal(
     (await snapshot(fresh)).tasks.find((t) => t.id === repeated.id).doneAt,
     new Date("2026-11-01T09:30:00Z").getTime(),

@@ -1,3 +1,4 @@
+import { finishFirstVisit } from "./setup-helper.mjs";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import assert from "node:assert/strict";
@@ -34,6 +35,7 @@ try {
   page.on("pageerror", (e) => errors.push(e.message));
   await page.clock.install({ time: new Date("2026-10-26T06:59:45Z") });
   await page.goto(url);
+  await finishFirstVisit(page, "Fictional Audit");
   assert.equal(await page.locator("nav button").count(), 6);
   await page.locator('nav [data-t="import"]').click();
   await page
