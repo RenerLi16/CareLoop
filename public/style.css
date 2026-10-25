@@ -425,9 +425,10 @@ header {
   box-shadow: 0 1px 0 rgba(255, 255, 255, 0.06) inset;
 }
 header h1 {
+  font-family: "Georgia Pro", Georgia, "Times New Roman", serif;
   font-size: 18px;
   letter-spacing: 0.2px;
-  font-weight: 680;
+  font-weight: 700;
 }
 header .tag {
   border: 1px solid rgba(255, 255, 255, 0.35);
