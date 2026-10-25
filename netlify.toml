@@ -1,0 +1,10 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+# Keep the generated standalone script unchanged so its CSP hash stays valid.
+[build.processing]
+  skip_processing = true

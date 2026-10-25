@@ -50,6 +50,14 @@ STATIC_DIR=dist npm start
 
 Patient records stay in the browser. Different browsers, addresses, and devices do not share a record. Browser storage behavior for local files varies, so use the same browser and address consistently. Check the final HTTPS address on the intended tablet before release.
 
+### Deploy to Netlify
+
+Connect the **CareLoop** Git repository and select the `main` branch. Leave the base directory empty: `netlify.toml` supplies the build command (`npm run build`), publish directory (`dist`), and Node.js version (22). No environment variables, API keys, database, or running Node server are needed.
+
+For a manual deploy, run `npm run build` and upload the entire `dist/` folder, including its generated `_headers` file. This preserves security headers and revalidation of app files and the offline worker. The standalone page is also available at `/careloop.html`; its bundled script is allowed by an exact content hash. Keep Netlify asset post-processing disabled, as configured, so that hash remains valid.
+
+After deployment, verify setup, saving and reopening a fictional plan, and offline reopening at the final HTTPS address. Records from localhost or a deploy preview do not transfer to the production address; use encrypted backup and restore when needed.
+
 ## First-visit setup
 
 New browsers open a four-screen setup flow: a CareLoop welcome, the patient’s name, the existing care-team editor, and the existing discharge reader. Screens fade out and in, and follow the device’s reduced-motion preference. The name field enables its forward arrow only after a nonblank name is entered. Care team and discharge steps can be skipped.

@@ -1,4 +1,5 @@
 import { readFileSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { ASSETS, sourceAsset, serviceWorker } from "../src/assets.js";
 const read = (file) =>
   readFileSync(new URL("../" + file, import.meta.url), "utf8");
@@ -51,6 +52,22 @@ const standalone = read("public/index.html")
     `data:image/png;base64,${sourceAsset("/careloop-logo.png").toString("base64")}`,
   );
 writeFileSync(new URL("careloop.html", output), standalone);
+// Static hosting bypasses src/server.js, so ship its headers with the release.
+// Allow only the exact bundled script in the downloadable standalone page.
+const scriptHash = createHash("sha256")
+  .update(standalone.match(/<script type="module">([\s\S]*?)<\/script>/)[1])
+  .digest("base64");
+writeFileSync(
+  new URL("_headers", output),
+  `/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
+  Cache-Control: no-cache
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'sha256-${scriptHash}'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'
+/sw.js
+  Service-Worker-Allowed: /
+`,
+);
 console.log(
   "Clean website: dist/index.html · Standalone file: dist/careloop.html",
 );

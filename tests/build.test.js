@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import {
   mkdtempSync,
   mkdirSync,
@@ -62,6 +63,7 @@ test("release build removes old files, includes the full website, and versions o
       "style.css",
       "sw.js",
       "careloop.html",
+      "_headers",
     ])
       assert.ok(files.includes(name));
     assert.ok(!files.includes("obsolete.js"));
@@ -77,6 +79,14 @@ test("release build removes old files, includes the full website, and versions o
     assert.ok(standalone.includes("function parseInstructions"));
     assert.ok(standalone.includes("data:font/woff2;base64,"));
     assert.ok(!standalone.includes('url("/manrope-'));
+    const headers = readFileSync(path.join(root, "dist/_headers"), "utf8");
+    const script = standalone.match(
+      /<script type="module">([\s\S]*?)<\/script>/,
+    )[1];
+    const scriptHash = createHash("sha256").update(script).digest("base64");
+    assert.ok(headers.includes(`'sha256-${scriptHash}'`));
+    assert.match(headers, /Cache-Control: no-cache/);
+    assert.match(headers, /Service-Worker-Allowed: \//);
     assert.deepEqual(
       readFileSync(path.join(root, "dist/manrope-latin.woff2")),
       readFileSync(path.join(source, "public/manrope-latin.woff2")),
