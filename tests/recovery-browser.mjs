@@ -28,10 +28,7 @@ async function chooseBackup(page, bytes) {
   });
 }
 async function deviceData(page) {
-  await page.getByRole("button", { name: "Manage care", exact: true }).click();
-  await page
-    .getByRole("button", { name: "Open device and data", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
 }
 async function unlock(page, passphrase) {
   await page.getByLabel("Backup passphrase", { exact: true }).fill(passphrase);
@@ -89,8 +86,8 @@ try {
     .locator("#plan-form input[type=checkbox]")
     .all())
     await checkbox.check();
-  await page.getByRole("button", { name: "Publish 30-day plan" }).click();
-  await page.getByRole("heading", { name: "A rhythm for each day." }).waitFor();
+  await page.getByRole("button", { name: "Save 30-day plan" }).click();
+  await page.getByRole("heading", { name: "Daily schedule" }).waitFor();
   await page.getByRole("button", { name: "Today", exact: true }).click();
   await page
     .getByRole("button", { name: "Record this task", exact: true })

@@ -5,10 +5,18 @@ import {
   compilePlan,
   logWarnings,
   toICS,
+  addDays,
 } from "/domain.js";
 import { loadRecord, saveChange, onRecordChange } from "/storage.js";
 import { createRecovery } from "/recovery.js";
 import { bedsideDay } from "/bedside.js";
+import {
+  planDays,
+  timelineGroups,
+  caregiverLoads,
+  conflictExample,
+  calendarMonth,
+} from "/plan-views.js";
 import {
   getDeviceStatus,
   onDeviceStatus,
@@ -40,7 +48,15 @@ let state = null,
   recordQuery = "",
   busy = false,
   reminderTimer = null,
-  renderedTab = null;
+  renderedTab = null,
+  scheduleDate = "",
+  planDate = "",
+  planAllDays = false,
+  planStatus = "all",
+  planCaregiver = "all",
+  calendarDate = "",
+  calendarMonthValue = "",
+  ruleDemo = false;
 const app = $("#app");
 const recovery = createRecovery({
   getLatest: loadRecord,
@@ -55,6 +71,14 @@ const recovery = createRecovery({
     tab = "today";
     filter = "";
     recordQuery = "";
+    scheduleDate = "";
+    planDate = "";
+    planAllDays = false;
+    planStatus = "all";
+    planCaregiver = "all";
+    calendarDate = "";
+    calendarMonthValue = "";
+    ruleDemo = false;
     await refresh();
   },
 });
@@ -124,7 +148,7 @@ function setup() {
     )
     .join(
       "",
-    )}</div></details><label>Caregiver names (optional, one per line)<textarea name="names" rows="3" placeholder="Lan&#10;Minh"></textarea></label><p class="muted">Caregiver names are labels for this tablet, not verified identities. Anyone with access to this browser can use the record.</p><button type="submit" class="primary">Set up this device</button></form></section><p class="muted">Care information is saved in this browser on this device. Clearing site data or using a different browser will not preserve this record. Use Device and data under Manage care to check offline readiness and installation instructions.</p><section class="card"><h2>Already have a bedside backup?</h2><p>Restore a saved backup instead of setting up a new record. The file is opened on this device.</p><label class="file-label">Choose backup to restore<input type="file" id="backup-upload" accept=".json,application/json"></label></section></main>`;
+    )}</div></details><label>Caregiver names (optional, one per line)<textarea name="names" rows="3" placeholder="Lan&#10;Minh"></textarea></label><p class="muted">Caregiver names are labels for this tablet, not verified identities. Anyone with access to this browser can use the record.</p><button type="submit" class="primary">Set up this device</button></form></section><p class="muted">Care information is saved in this browser on this device. Clearing site data or using a different browser will not preserve this record. Open Settings to check offline readiness.</p><section class="card"><h2>Already have a bedside backup?</h2><p>Restore a saved backup instead of setting up a new record. The file is opened on this device.</p><label class="file-label">Choose backup to restore<input type="file" id="backup-upload" accept=".json,application/json"></label></section></main>`;
 }
 function storageFailure(message) {
   app.innerHTML = `<main class="setup"><h1>Local storage needs attention.</h1><section class="alert" role="alert"><p>${esc(message)}</p><p>CareLoop has not started a temporary record. Your existing data has not been replaced.</p>${button("retry-storage", "Try opening storage again", "secondary")}</section></main>`;
@@ -134,32 +158,35 @@ function draw() {
     setup();
     return;
   }
-  app.innerHTML = `<div class="shell"><aside><a class="brand" href="/">✳ <span>CareLoop</span></a><div class="team-label">${esc(state.profile.patient)} · Bedside tablet</div><nav aria-label="Main navigation">${[
+  app.innerHTML = `<div class="shell full-feature-app"><aside><a class="brand" href="/">✳ <span>CareLoop</span></a><div class="team-label">${esc(state.profile.patient)}</div><nav aria-label="Main navigation">${[
     ["today", "◷", "Today"],
-    ["schedule", "◴", "Schedule"],
+    ["plan", "+", "Add instructions"],
+    ["schedule", "◴", "Daily schedule"],
+    ["month", "▦", "30-day plan"],
+    ["team", "♧", "Caregivers"],
+    ["calendar", "▣", "Calendar"],
     ["records", "☷", "Records"],
-    ["manage", "⚙", "Manage care"],
+    ["settings", "⚙", "Settings"],
   ]
     .map(
       ([key, icon, label]) =>
-        `<button data-tab="${key}" class="nav-item ${key === tab || (key === "manage" && ["plan", "team", "settings"].includes(tab)) ? "active" : ""}" ${key === tab || (key === "manage" && ["plan", "team", "settings"].includes(tab)) ? 'aria-current="page"' : ""}><span aria-hidden="true">${icon}</span>${label}</button>`,
+        `<button type="button" data-tab="${key}" class="nav-item ${key === tab ? "active" : ""}" ${key === tab ? 'aria-current="page"' : ""}><span aria-hidden="true">${icon}</span>${label}</button>`,
     )
     .join(
       "",
-    )}</nav><div class="aside-bottom"><div><b>Saved on this device</b><small>No account · no remote sharing</small></div></div></aside><main class="main"><header><span class="eyebrow">THE NEXT 30 DAYS, TOGETHER</span><span class="sync" id="offline-indicator" aria-live="polite">${offlineIndicator()}</span></header><div id="content">${["plan", "team", "settings"].includes(tab) ? `<div class="manage-breadcrumb"><button type="button" class="secondary" data-tab="manage">← Manage care</button><span>Care management · changes affect the saved plan</span></div>` : ""}${{ today: today, plan: planView, schedule: scheduleView, team: teamView, records: recordsView, settings: settingsView, manage: manageView }[tab]()}</div><footer>CareLoop organizes the instructions you enter. It does not diagnose, recommend treatment, or check all possible medication interactions.</footer></main></div>`;
+    )}</nav><div class="aside-bottom"><small>Saved on this tablet</small></div></aside><main class="main"><header><span class="eyebrow">CARELOOP</span><span class="sync" id="offline-indicator" aria-live="polite">${offlineIndicator()}</span></header><div id="content">${{ today, plan: planView, schedule: scheduleView, month: monthView, team: teamView, calendar: calendarView, records: recordsView, settings: settingsView }[tab]()}</div><footer><details><summary>About CareLoop and privacy</summary><p>CareLoop organizes the instructions you enter. It does not diagnose or check every medication interaction. Your record stays in this browser; exported files are separate copies.</p></details></footer></main></div>`;
   if (renderedTab !== tab) {
     window.scrollTo(0, 0);
     renderedTab = tab;
   }
 }
 function emptyView() {
-  return `<section class="empty card"><span class="big-icon">✳</span><h2>One plan. Everyone on the same page.</h2><p>Start with the discharge paperwork. Review each instruction, build a schedule, and record care on this tablet.</p>${button("new-plan", "Create a care plan")}</section>`;
+  return `<section class="empty card"><span class="big-icon">✳</span><h2>Start with the discharge instructions.</h2><p>Paste the instructions, check the details, then save your plan.</p>${button("new-plan", "Create a care plan", "primary bedside-button")}</section>`;
 }
 function heading(title, sub, actions = "") {
   return `<div class="heading"><div><h1>${title}</h1><p class="lead">${sub}</p></div>${actions}</div>`;
 }
-function warningsView() {
-  const warnings = logWarnings(state.tasks, state.plan);
+function warningsView(warnings = logWarnings(state.tasks, state.plan)) {
   return warnings.length
     ? `<section class="alert" role="status"><h3>Records to review (${warnings.length})</h3>${warnings
         .slice(-10)
@@ -192,50 +219,29 @@ function today() {
     timeZone: state.profile.timeZone,
   }).format(new Date());
   const late = next && Date.parse(next.dueAt) < Date.now() - 3600000;
+  const timingAlerts = logWarnings(state.tasks, state.plan);
+  const medicines = day.today.filter((task) => task.kind === "med");
+  const medicineDone = medicines.filter(
+    (task) => task.status === "done",
+  ).length;
+  const completion = day.today.length
+    ? Math.round((day.completed.length / day.today.length) * 100)
+    : 0;
   return (
     heading(
-      "A clearer day ahead.",
-      `${esc(dateLabel)} · Care for ${esc(state.profile.patient)} · ${esc(state.profile.timeZone)}`,
+      "Today",
+      `${esc(dateLabel)} · ${esc(state.profile.patient)}`,
+      '<button type="button" class="secondary" data-tab="plan">Paste instructions</button>',
     ) +
     (!state.plan
       ? emptyView()
-      : `<div class="bedside-view">${warningsView()}${day.earlier.length ? `<section class="earlier-notice"><div><b>${day.earlier.length} earlier task${day.earlier.length === 1 ? " has" : "s have"} no record yet</b><p>Review what happened on previous days.</p></div>${button("earlier-records", "Review earlier records", "secondary", `data-date="${esc(day.earlier[0].date)}"`)}</section>` : ""}<section class="card bedside-focus" aria-labelledby="next-task-title"><div class="focus-heading"><span class="eyebrow">${late ? "CHECK THIS TASK" : "NEXT ON TODAY’S PLAN"}</span><span class="badge ${late ? "late" : ""}">${late ? "Past due" : next ? "Pending" : "Today"}</span></div>${next ? `<div class="focus-time">${esc(timeLabel(next.dueAt))}</div><h2 id="next-task-title">${esc(next.label)}</h2><p>${esc(taskSummary(next))}</p><p class="focus-hint">${late ? "Record what actually happened. Check the original instructions for any questions about a missed task." : "Review the task, then record who did it and when."}</p>${button("edit-task", "Record this task", "primary bedside-button", `data-id="${esc(next.id)}"`)}<small>Nothing is marked complete until you save the record.</small>` : `<h2 id="next-task-title">${day.today.length ? "Today’s tasks are recorded." : "No tasks scheduled for today."}</h2><p>${day.today.length ? `${day.completed.length} completed · ${day.skipped.length} skipped. Your records are saved on this device.` : "Check the schedule or open Records to see the plan’s dates."}</p><button type="button" class="secondary bedside-button" data-tab="records">View care records</button>`}</section><div class="bedside-progress" aria-label="Today’s progress"><div><strong>${day.completed.length}</strong><span>Completed</span></div><div><strong>${day.pending.length}</strong><span>Still pending</span></div><div><strong>${day.skipped.length}</strong><span>Skipped</span></div></div><section class="card"><div class="section-title"><div><h2>Still to record today</h2><p class="muted">${day.pending.length} task${day.pending.length === 1 ? "" : "s"} · ${esc(date)}</p></div></div>${day.pending.length ? day.pending.map((t) => taskRow(t, true)).join("") : '<p class="empty-line">No pending tasks for today.</p>'}</section>${day.recorded.length ? `<details class="card recorded-today"><summary>Recorded today · ${day.recorded.length} task${day.recorded.length === 1 ? "" : "s"}</summary>${day.recorded.map((t) => taskRow(t, true)).join("")}</details>` : ""}${state.plan.flags?.length ? `<section class="card flags"><h2>Keep these instructions close</h2><p class="muted">Copied from your plan. Check the original paperwork for full instructions.</p>${state.plan.flags.map((f) => `<p>${esc(f)}</p>`).join("")}</section>` : ""}</div>`)
+      : `<div class="bedside-view">${warningsView(timingAlerts)}${day.earlier.length ? `<section class="earlier-notice"><div><b>${day.earlier.length} earlier task${day.earlier.length === 1 ? " has" : "s have"} no record yet</b><p>Review what happened on previous days.</p></div>${button("earlier-records", "Review earlier records", "secondary", `data-date="${esc(day.earlier[0].date)}"`)}</section>` : ""}<section class="card bedside-focus" aria-labelledby="next-task-title"><div class="focus-heading"><span class="eyebrow">${late ? "CHECK THIS TASK" : "NEXT ON TODAY’S PLAN"}</span><span class="badge ${late ? "late" : ""}">${late ? "Past due" : next ? "Pending" : "Today"}</span></div>${next ? `<div class="focus-time">${esc(timeLabel(next.dueAt))}</div><h2 id="next-task-title">${esc(next.label)}</h2><p>${esc(taskSummary(next))}</p><p class="focus-hint">${late ? "Record when it actually happened." : "Record who did it and when."}</p>${button("edit-task", "Record this task", "primary bedside-button", `data-id="${esc(next.id)}"`)}` : `<h2 id="next-task-title">${day.today.length ? "Today’s tasks are recorded." : "No tasks scheduled for today."}</h2><p>${day.today.length ? `${day.completed.length} completed · ${day.skipped.length} skipped. Your records are saved on this device.` : "Check the schedule or open Records to see the plan’s dates."}</p><button type="button" class="secondary bedside-button" data-tab="records">View care records</button>`}</section><div class="bedside-progress" aria-label="Today’s progress"><div><strong>${day.completed.length}</strong><span>Completed</span></div><div><strong>${day.pending.length}</strong><span>Still pending</span></div><div><strong>${day.skipped.length}</strong><span>Skipped</span></div></div><details class="card today-summary"><summary>Today’s summary</summary><div class="summary-metrics"><div><strong>${completion}%</strong><span>Tasks completed</span></div><div><strong>${medicineDone} / ${medicines.length}</strong><span>Medicines recorded</span></div><div><strong>${timingAlerts.length}</strong><span>Timing alerts</span></div><div><strong>${day.pastDue.length}</strong><span>Open past-due tasks</span></div></div></details><section class="card"><div class="section-title"><div><h2>Still to record today</h2><p class="muted">${day.pending.length} task${day.pending.length === 1 ? "" : "s"} · ${esc(date)}</p></div></div>${day.pending.length ? day.pending.map((t) => taskRow(t, true)).join("") : '<p class="empty-line">No pending tasks for today.</p>'}</section>${day.recorded.length ? `<details class="card recorded-today"><summary>Recorded today · ${day.recorded.length} task${day.recorded.length === 1 ? "" : "s"}</summary>${day.recorded.map((t) => taskRow(t, true)).join("")}</details>` : ""}${state.plan.flags?.length ? `<section class="card flags"><h2>Keep these instructions close</h2><p class="muted">Copied from your plan. Check the original paperwork for full instructions.</p>${state.plan.flags.map((f) => `<p>${esc(f)}</p>`).join("")}</section>` : ""}</div>`)
   );
 }
 function taskRow(t, bedside = false) {
   const late =
     t.status === "todo" && Date.parse(t.dueAt) < Date.now() - 3600000;
   return `<article class="task ${bedside ? "bedside-task" : ""} ${t.status === "done" ? "completed" : ""}" data-task-id="${esc(t.id)}"><div class="time">${esc(bedside ? timeLabel(t.dueAt) : t.time)}<small>${esc(t.kind)}</small></div><div class="task-detail"><b>${esc(t.label)}</b><small>${esc(taskSummary(t))}</small>${t.value ? `<p>${esc(typeof t.value === "object" ? t.value.amount + " " + t.value.unit : t.value)}</p>` : ""}${t.note ? `<p class="muted">${esc(t.note)}</p>` : ""}</div><span class="badge ${late ? "late" : ""}">${late ? "Past due" : t.status === "done" ? "Completed" : t.status === "skipped" ? "Skipped" : "Pending"}</span>${button("edit-task", t.status === "todo" ? "Record task" : "Edit record", "secondary", `data-id="${esc(t.id)}" aria-label="${t.status === "todo" ? "Record task" : "Edit record"}: ${esc(t.label)}"`)}</article>`;
-}
-function manageView() {
-  const options = [
-    [
-      "plan",
-      "▤",
-      "Care plan",
-      "Read discharge instructions, review medications, and publish a schedule.",
-    ],
-    [
-      "team",
-      "♧",
-      "Caregivers",
-      "Add or change the names used for assignment and recording.",
-    ],
-    [
-      "settings",
-      "⚙",
-      "Device and data",
-      "Reminders, calendar export, backups, restore, and data deletion.",
-    ],
-  ];
-  return (
-    heading(
-      "Manage care.",
-      "Make changes here, then return to Today for the daily routine.",
-      '<button type="button" class="secondary" data-tab="today">Back to Today</button>',
-    ) +
-    `<div class="manage-grid">${options.map(([key, icon, label, description]) => `<section class="card manage-card"><span class="manage-icon" aria-hidden="true">${icon}</span><h2>${label}</h2><p>${description}</p><button type="button" class="primary" data-tab="${key}">Open ${label.toLowerCase()}</button></section>`).join("")}</div><p class="muted">This area helps prevent accidental changes during daily use. It is not locked; anyone using this browser can open it.</p>${draft ? '<p class="notice">You have a care plan draft in this open page. It is not saved until you publish it.</p>' : ""}`
-  );
 }
 function newDraft() {
   return {
@@ -275,11 +281,14 @@ function planView() {
   }
   return (
     heading(
-      "From paperwork to a plan.",
-      "Review every detail before publishing. Completed care records stay in the history.",
+      "Add discharge instructions",
+      "Paste → Review → Save",
       button("reload-plan", "Reload saved plan", "secondary"),
     ) +
-    `<section class="card"><h2>1. Bring in the instructions</h2><p class="muted">Paste English discharge text with MEDICATIONS and FOLLOW UP headings, or load a text file. Photos and scanned PDFs are not supported.</p><label>Discharge text<textarea id="raw-text" rows="6" placeholder="MEDICATIONS&#10;Medication name 10 mg once daily">${esc(draft.rawText || "")}</textarea></label><div class="actions">${button("parse", "Read instructions")}${button("sample", "Load fictional example", "secondary")}<label class="file-label">Load .txt<input id="text-upload" type="file" accept=".txt,text/plain"></label></div><p class="muted">Reading text replaces the medication draft below. Your published plan stays intact until you publish.</p></section><form id="plan-form"><section class="card"><h2>2. Review the care plan</h2><div class="grid three">${field("Patient name", "patient", draft.patient, "text", "required")}${field("Plan start date", "startDate", draft.startDate, "date", "required")}${select("Patient’s time zone", "timeZone", draft.timeZone, [...new Set([draft.timeZone, ...Intl.supportedValuesOf("timeZone")])])}</div>${draft.unresolved?.length ? `<section class="notice"><h3>Instructions requiring review</h3>${draft.unresolved.map((u, i) => `<label class="check"><input name="resolve-${i}" type="checkbox" ${u.resolved ? "checked" : ""}><span>${esc(u.reason)} ${u.text ? `<q>${esc(u.text)}</q>` : ""}<small>I entered this manually, or verified it is outside the supported plan.</small></span></label>`).join("")}</section>` : ""}<datalist id="med-names">${draft.meds.map((m) => `<option value="${esc(m.drug)}">`).join("")}</datalist>${draft.meds.map(medEditor).join("")}${button("add-med", "+ Add medication", "secondary")}<details><summary>Meal and routine times</summary><p class="muted">These define what the scheduler means by food, morning, and bedtime. Unsupported or conflicting rules prevent publication. “Twice daily” uses two daytime slots at least four hours apart; an exact interval must be entered as “every 12 hours.”</p><div class="grid three">${Object.keys(
+    `<section class="card"><h2>1. Bring in the instructions</h2><p class="muted">Paste the English instructions below.</p><label>Discharge text<textarea id="raw-text" rows="7" placeholder="MEDICATIONS&#10;Medication name 10 mg once daily">${esc(draft.rawText || "")}</textarea></label><div class="actions">${button("parse", "Read instructions", "primary bedside-button")}${button("manual", "Enter manually", "secondary")}${button("sample", "Load fictional example", "secondary")}<label class="file-label">Load .txt<input id="text-upload" type="file" accept=".txt,text/plain"></label></div><details class="format-help"><summary>Supported format</summary><p>Use a MEDICATIONS heading and one medicine per line. Photos and scanned PDFs are not read here.</p><pre>MEDICATIONS
+Example A 10 mg once daily
+FOLLOW UP
+Primary care in 7 days</pre><p>Reading text changes the draft below. It does not change the saved plan.</p></details></section><form id="plan-form"><section class="card"><h2 id="review-heading" tabindex="-1">2. Review the care plan</h2><p class="muted">${draft.meds.length} medicines · ${draft.followups.length} follow-ups</p><div class="grid three">${field("Patient name", "patient", draft.patient, "text", "required")}${field("Plan start date", "startDate", draft.startDate, "date", "required")}${select("Patient’s time zone", "timeZone", draft.timeZone, [...new Set([draft.timeZone, ...Intl.supportedValuesOf("timeZone")])])}</div>${draft.unresolved?.length ? `<section class="notice"><h3>Instructions requiring review</h3>${draft.unresolved.map((u, i) => `<label class="check"><input name="resolve-${i}" type="checkbox" ${u.resolved ? "checked" : ""}><span>${esc(u.reason)} ${u.text ? `<q>${esc(u.text)}</q>` : ""}<small>I entered this manually, or verified it is outside the supported plan.</small></span></label>`).join("")}</section>` : ""}<datalist id="med-names">${draft.meds.map((m) => `<option value="${esc(m.drug)}">`).join("")}</datalist>${draft.meds.map(medEditor).join("")}${button("add-med", "+ Add medication", "secondary")}<details><summary>Meal and routine times</summary><p class="muted">These define what the scheduler means by food, morning, and bedtime. Unsupported or conflicting rules prevent publication. “Twice daily” uses two daytime slots at least four hours apart; an exact interval must be entered as “every 12 hours.”</p><div class="grid three">${Object.keys(
       DEFAULT_PREFS,
     )
       .map((k) =>
@@ -308,7 +317,7 @@ function planView() {
       )
       .join(
         "",
-      )}${button("add-followup", "+ Add follow-up", "secondary")}<h3>Daily monitoring</h3><label class="check"><input name="weight" type="checkbox" ${draft.monitoring?.weight ? "checked" : ""}>Record daily weight</label><label class="check"><input name="symptoms" type="checkbox" ${draft.monitoring?.symptoms ? "checked" : ""}>Record daily symptoms</label><label>Clinician’s warning / escalation instructions (one per line)<textarea name="flags" rows="4">${esc(draft.flags.join("\n"))}</textarea></label></section><section class="card"><h2>3. Check and publish</h2><p class="muted">The scheduler checks the supported timing rules you entered. It does not identify interactions or decide whether a medication regimen is appropriate.</p><div class="actions">${button("preview", "Check schedule", "secondary")}<button class="primary" type="submit">Publish 30-day plan</button></div><div id="preview" aria-live="polite">${previewHTML()}</div></section></form>`
+      )}${button("add-followup", "+ Add follow-up", "secondary")}<h3>Daily monitoring</h3><label class="check"><input name="weight" type="checkbox" ${draft.monitoring?.weight ? "checked" : ""}>Record daily weight</label><label class="check"><input name="symptoms" type="checkbox" ${draft.monitoring?.symptoms ? "checked" : ""}>Record daily symptoms</label><label>Clinician’s warning / escalation instructions (one per line)<textarea name="flags" rows="4">${esc(draft.flags.join("\n"))}</textarea></label></section><section class="card"><h2>3. Save the plan</h2><div class="actions">${button("preview", "Check schedule", "secondary")}<button class="primary bedside-button" type="submit">Save 30-day plan</button></div><div id="preview" aria-live="polite">${previewHTML()}</div></section></form>`
   );
 }
 function previewHTML() {
@@ -359,42 +368,153 @@ function collectDraft() {
     resolved: f.has(`resolve-${i}`),
   }));
 }
+function chosenDay(value) {
+  const days = planDays(state.plan, state.tasks);
+  return days.some((d) => d.date === value)
+    ? value
+    : days.some((d) => d.date === localDate())
+      ? localDate()
+      : state.plan.startDate;
+}
+function dateLabel(date) {
+  return new Intl.DateTimeFormat("en", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(date + "T12:00:00Z"));
+}
+function timelineView(date) {
+  const groups = timelineGroups(state.tasks, date);
+  if (!groups.length) return '<p class="empty-line">No tasks on this day.</p>';
+  const items = state.tasks
+    .filter((t) => !t.archived && t.date === date)
+    .sort((a, b) => a.dueAt.localeCompare(b.dueAt));
+  return `<div class="day-diagram" role="img" aria-label="Daily schedule timeline for ${esc(date)}. A text agenda follows."><div class="diagram-axis"><span>12 AM</span><span>6 AM</span><span>Noon</span><span>6 PM</span><span>12 AM</span></div>${groups.map((group) => `<div class="diagram-row"><b>${esc(group.label)}</b><div class="diagram-track"><svg class="diagram-svg" width="100%" height="48" aria-hidden="true">${group.slots.map((slot) => `<g class="diagram-pin ${slot.status === "done" ? "is-done" : ""}"><circle cx="${slot.percent}%" cy="14" r="7"></circle><text x="${slot.percent}%" y="40" text-anchor="middle">${esc(slot.time)}</text></g>`).join("")}</svg></div></div>`).join("")}</div><ol class="mobile-day-diagram" aria-label="Daily schedule timeline">${items.map((t) => `<li><time>${esc(timeLabel(t.dueAt))}</time><span class="mobile-dot" aria-hidden="true"></span><span>${esc(t.label)}</span></li>`).join("")}</ol>`;
+}
 function scheduleView() {
   if (!state.plan)
     return (
-      heading("Daily schedule", "Start with a reviewed care plan.") +
+      heading("Daily schedule", "Save your instructions to build a schedule.") +
       emptyView()
     );
   const p = state.plan;
+  scheduleDate = chosenDay(scheduleDate);
+  const tasks = state.tasks
+    .filter((t) => !t.archived && t.date === scheduleDate)
+    .sort((a, b) => a.dueAt.localeCompare(b.dueAt));
+  const example = ruleDemo ? conflictExample(p) : null;
   return (
     heading(
-      "A rhythm for each day.",
-      `Plan revision ${state.revision} · ${esc(p.timeZone)}`,
+      "Daily schedule",
+      `${esc(dateLabel(scheduleDate))} · ${esc(p.timeZone)}`,
       button("calendar", "Export calendar", "secondary"),
     ) +
-    `<section class="card"><h2>Medication schedule</h2><p class="muted">${esc(p.startDate)} · 30 days. Individual start and stop dates apply.</p>${p.meds.map((m) => `<article class="schedule-row"><div><h3>${esc(m.drug)}</h3><p>${esc(m.dose)} · ${esc(m.freq)}</p><small>${m.meal === "any" ? "No food rule entered" : esc(m.meal) + " " + esc(m.mealTarget && m.mealTarget !== "any" ? m.mealTarget : "food")}${m.gapTarget ? " · ≥ " + esc(m.gapHours) + "h from " + esc(m.gapTarget) : ""}</small><blockquote>${esc(m.source || "Manually entered and reviewed")}</blockquote></div><div class="time-pills">${p.compiled.times[m.id].map((t) => `<span>${t}</span>`).join("")}</div></article>`).join("")}</section><section class="card"><h2>Your routine anchors</h2><div class="anchor-list">${Object.entries(
-      p.prefs,
-    )
-      .map(([k, v]) => `<span>${esc(k)} <b>${v}</b></span>`)
-      .join("")}</div></section>`
+    `<section class="card"><div class="section-title"><h2>Your day at a glance</h2><label>Schedule date<input id="schedule-date" type="date" value="${esc(scheduleDate)}" min="${esc(p.startDate)}" max="${addDays(p.startDate, 29)}"></label></div>${timelineView(scheduleDate)}</section><section class="card"><h2>Tasks for this day</h2>${tasks.map((t) => taskRow(t, true)).join("") || "<p>No tasks on this date.</p>"}</section><details class="card medicine-rules"><summary>Medicine timing rules</summary>${p.meds.map((m) => `<article class="schedule-row"><div><h3>${esc(m.drug)}</h3><p>${esc(m.dose)} · ${esc(m.freq)}</p><small>${m.meal === "any" ? "No food rule entered" : esc(m.meal) + " " + esc(m.mealTarget && m.mealTarget !== "any" ? m.mealTarget : "food")}${m.gapTarget ? " · At least " + esc(m.gapHours) + "h from " + esc(m.gapTarget) : ""}</small><details><summary>Original instruction</summary><p>${esc(m.source || "Entered manually")}</p></details></div><div class="time-pills">${p.compiled.times[m.id].map((t) => `<span>${esc(t)}</span>`).join("")}</div></article>`).join("")}<div class="actions">${button("rebuild-schedule", "Rebuild schedule", "secondary")}<button type="button" class="secondary" data-tab="plan">Edit instructions</button></div></details><details class="card rule-example" ${ruleDemo ? "open" : ""}><summary>Try a timing conflict</summary><p class="muted">Example only. Your saved plan will not change.</p>${button("show-rule-demo", "Show timing conflict", "secondary")}${ruleDemo ? (example ? `<div class="alert" role="status"><b>Timing conflict</b><p>${esc(example.message)}</p><div class="conflict-pair"><span>${esc(example.a)} · ${esc(example.time)}</span><span>${esc(example.b)} · ${esc(example.time)}</span></div></div>${button("clear-rule-demo", "Clear example", "secondary")}` : '<p class="notice">Add a spacing rule between two medicines to try this example.</p>') : ""}</details>`
+  );
+}
+function filteredPlanTasks(tasks) {
+  return tasks.filter(
+    (t) =>
+      (planStatus === "all" || t.status === planStatus) &&
+      (planCaregiver === "all" || t.who === planCaregiver),
+  );
+}
+function planTaskRow(task) {
+  const assignment =
+    task.status === "todo"
+      ? `<label class="inline-assignment">Assigned caregiver<select data-assign-task="${esc(task.id)}" aria-label="Assign ${esc(task.label)} on ${esc(task.date)}"><option value="">Unassigned</option>${state.team
+          .filter((p) => !p.archived)
+          .map(
+            (p) =>
+              `<option value="${esc(p.id)}" ${task.who === p.id ? "selected" : ""}>${esc(p.name)}</option>`,
+          )
+          .join("")}</select></label>`
+      : "";
+  return `<div class="plan-task">${taskRow(task)}<div class="plan-task-tools">${assignment}${task.status === "todo" ? button("skip-task", "Record as skipped", "text", `data-id="${esc(task.id)}"`) : ""}</div></div>`;
+}
+function monthView() {
+  if (!state.plan)
+    return (
+      heading("30-day plan", "Save your instructions first.") + emptyView()
+    );
+  const days = planDays(state.plan, state.tasks);
+  if (
+    planCaregiver !== "all" &&
+    planCaregiver !== "" &&
+    !state.team.some((p) => !p.archived && p.id === planCaregiver)
+  )
+    planCaregiver = "all";
+  planDate = chosenDay(planDate);
+  const selected = days.find((day) => day.date === planDate),
+    shown = planAllDays ? days : [selected];
+  const total = days.reduce((sum, d) => sum + d.total, 0),
+    done = days.reduce((sum, d) => sum + d.done, 0);
+  const outside = state.tasks.filter(
+    (t) =>
+      !t.archived &&
+      (t.date < state.plan.startDate ||
+        t.date > addDays(state.plan.startDate, 29)) &&
+      t.kind === "visit",
+  );
+  return (
+    heading(
+      "30-day plan",
+      `${total} tasks · ${done} completed`,
+      button("calendar", "Export calendar", "secondary"),
+    ) +
+    warningsView() +
+    `<section class="card"><h2>Choose a day</h2><div class="plan-day-grid">${days.map((day) => `<button type="button" class="plan-day ${day.date === planDate && !planAllDays ? "selected" : ""}" data-plan-day="${day.date}" aria-pressed="${day.date === planDate && !planAllDays}"><span>${esc(dateLabel(day.date))}</span><strong>${day.done} / ${day.total}</strong><small>completed${day.skipped ? " · " + day.skipped + " skipped" : ""}</small></button>`).join("")}</div></section><section class="card"><div class="section-title"><h2>${planAllDays ? "All 30 days" : esc(dateLabel(planDate))}</h2>${button("all-plan-days", planAllDays ? "Show selected day" : "Show all 30 days", "secondary")}</div><div class="plan-filters">${select(
+      "Task status",
+      "plan-status",
+      planStatus,
+      [
+        ["all", "All tasks"],
+        ["todo", "Pending"],
+        ["done", "Completed"],
+        ["skipped", "Skipped"],
+      ],
+    )}${select("Assigned caregiver", "plan-caregiver", planCaregiver, [["all", "Everyone"], ["", "Unassigned"], ...state.team.filter((p) => !p.archived).map((p) => [p.id, p.name])])}</div>${shown.map((day) => `<section class="plan-date-group"><h3>${esc(dateLabel(day.date))}</h3>${filteredPlanTasks(day.tasks).map(planTaskRow).join("") || '<p class="muted">No matching tasks.</p>'}</section>`).join("")}</section>${outside.length ? `<section class="card"><h2>Follow-ups outside these 30 days</h2>${outside.map((t) => `<p class="record-date">${esc(dateLabel(t.date))}</p>${planTaskRow(t)}`).join("")}</section>` : ""}`
   );
 }
 function teamView() {
+  const loads = caregiverLoads(state.team, state.tasks),
+    max = Math.max(1, ...loads.map((p) => p.total));
   return (
     heading(
-      "Care is a team effort.",
-      "Names help record who did what on this tablet. They do not verify identity.",
+      "Caregivers",
+      "See assignments and share the work.",
+      '<button type="button" class="secondary" data-tab="month">Assign tasks</button>',
     ) +
-    `<section class="card"><form id="caregiver-form"><h2>Add a caregiver</h2>${field("Caregiver name", "name", "", "text", 'required maxlength="100"')}<button type="submit" class="primary">Add caregiver</button></form></section><div class="team-grid">${state.team
+    `<section class="card"><h2>Caregiver workload</h2><div class="caregiver-loads">${loads.map((person) => `<article class="load-row"><b>${esc(person.name)}</b><div class="load-track" aria-hidden="true"><svg width="100%" height="10"><rect width="${(person.total / max) * 100}%" height="10"></rect></svg></div><div class="load-metrics"><span><strong>${person.total}</strong> assigned</span><span><strong>${person.done}</strong> completed</span><span><strong>${person.rate}%</strong> complete</span><span><strong>${person.activeDays}</strong> active days</span></div></article>`).join("")}</div></section><section class="card"><form id="caregiver-form"><h2>Add a caregiver</h2>${field("Caregiver name", "name", "", "text", 'required maxlength="100"')}<button type="submit" class="primary">Add caregiver</button></form></section><div class="team-grid">${state.team
       .filter((m) => !m.archived)
-      .map((m) => {
-        const tasks = state.tasks.filter((t) => !t.archived && t.who === m.id),
-          done = tasks.filter((t) => t.status === "done").length;
-        return `<section class="card person"><span class="avatar large">${esc(m.name[0])}</span><h2>${esc(m.name)}</h2><p class="muted">Local caregiver label</p><div class="person-stats"><div><strong>${tasks.length}</strong><small>Assigned</small></div><div><strong>${done}</strong><small>Completed</small></div></div>${m.id !== "patient" ? button("rename-caregiver", "Rename", "secondary", `data-id="${esc(m.id)}"`) + button("remove-caregiver", "Remove", "text danger", `data-id="${esc(m.id)}"`) : ""}</section>`;
-      })
+      .map(
+        (m) =>
+          `<section class="card person"><span class="avatar large">${esc(m.name[0])}</span><h2>${esc(m.name)}</h2>${m.id !== "patient" ? button("rename-caregiver", "Rename", "secondary", `data-id="${esc(m.id)}"`) + button("remove-caregiver", "Remove", "text danger", `data-id="${esc(m.id)}"`) : '<p class="muted">Patient / self</p>'}</section>`,
+      )
       .join(
         "",
-      )}</div><p class="muted">${state.tasks.filter((t) => !t.archived && !t.who).length} tasks are unassigned. Assign them from Today or Records. Removing a name keeps past records.</p>`
+      )}</div><small>Names are labels on this tablet, not verified accounts.</small>`
+  );
+}
+function calendarView() {
+  if (!state.plan)
+    return heading("Calendar", "Save your instructions first.") + emptyView();
+  calendarMonthValue ||= chosenDay(calendarDate).slice(0, 7);
+  const month = calendarMonth(calendarMonthValue, state.tasks);
+  calendarDate = calendarDate.startsWith(calendarMonthValue)
+    ? calendarDate
+    : month.days.find((d) => d.total)?.date || calendarMonthValue + "-01";
+  const tasks = state.tasks
+    .filter((t) => !t.archived && t.date === calendarDate)
+    .sort((a, b) => a.dueAt.localeCompare(b.dueAt));
+  return (
+    heading(
+      "Calendar",
+      "View your care plan or add reminders to your calendar.",
+      button("calendar", "Download calendar (.ics)", "primary bedside-button"),
+    ) +
+    `<section class="card"><div class="section-title"><h2>${esc(new Intl.DateTimeFormat("en", { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(calendarMonthValue + "-01T12:00:00Z")))}</h2><label>Calendar month<input id="calendar-month" type="month" value="${esc(calendarMonthValue)}"></label></div><div class="calendar-scroll"><div class="calendar-board">${["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => `<span class="calendar-weekday">${d}</span>`).join("")}${Array.from({ length: month.offset }, () => '<span aria-hidden="true"></span>').join("")}${month.days.map((day) => `<button type="button" class="calendar-day ${day.date === calendarDate ? "selected" : ""}" data-calendar-day="${day.date}" aria-pressed="${day.date === calendarDate}" aria-label="${esc(dateLabel(day.date))}: ${day.total} tasks"><b>${day.number}</b><small>${day.total ? day.total + " tasks" : "—"}</small></button>`).join("")}</div></div></section><section class="card"><h2>${esc(dateLabel(calendarDate))}</h2>${tasks.map((t) => taskRow(t)).join("") || '<p class="muted">No tasks on this date.</p>'}</section><details class="card"><summary>About calendar reminders</summary><p>The file includes pending tasks and a reminder 15 minutes before each one. Import it into your calendar and check its notification settings.</p><p class="muted">This is a snapshot. Remove the old import before replacing it. Importing into a cloud calendar can copy care details outside this tablet.</p></details>`
   );
 }
 function matchingRecords() {
@@ -533,12 +653,12 @@ function updateRecordForm() {
         ? "Save skipped record"
         : "Save assignment / reopen task";
 }
-function editTask(id) {
+function editTask(id, intent) {
   const t = state.tasks.find((t) => t.id === id);
   const dialog = document.createElement("dialog");
   dialog.id = "task-dialog";
   dialog.dataset.version = state.version;
-  const status = t.status === "todo" ? "done" : t.status;
+  const status = intent || (t.status === "todo" ? "done" : t.status);
   const actual = t.actualAt
     ? localInput(t.actualAt)
     : t.date === localDate()
@@ -574,6 +694,19 @@ app.addEventListener("click", async (e) => {
   if (nav) {
     if (tab === "plan") collectDraft();
     tab = nav.dataset.tab;
+    draw();
+    return;
+  }
+  const day = e.target.closest("[data-plan-day]");
+  if (day) {
+    planDate = day.dataset.planDay;
+    planAllDays = false;
+    draw();
+    return;
+  }
+  const calendarDay = e.target.closest("[data-calendar-day]");
+  if (calendarDay) {
+    calendarDate = calendarDay.dataset.calendarDay;
     draw();
     return;
   }
@@ -618,6 +751,41 @@ async function action(action, b) {
           ? "Update ready. Close all CareLoop windows after saving your work."
           : "Update check finished. Offline status is shown above.",
       );
+    }
+    if (action === "manual") {
+      collectDraft();
+      draft.meds.push({
+        id: crypto.randomUUID(),
+        drug: "",
+        dose: "",
+        freq: "",
+        meal: "any",
+        gapTarget: "",
+        gapHours: "",
+        reviewed: false,
+      });
+      preview = null;
+      draw();
+      $("[data-med]:last-of-type input")?.focus();
+    }
+    if (action === "all-plan-days") {
+      planAllDays = !planAllDays;
+      draw();
+    }
+    if (action === "skip-task") editTask(b.dataset.id, "skipped");
+    if (action === "show-rule-demo") {
+      ruleDemo = true;
+      draw();
+    }
+    if (action === "clear-rule-demo") {
+      ruleDemo = false;
+      draw();
+    }
+    if (action === "rebuild-schedule") {
+      await commit({ type: "plan", plan: state.plan });
+      ruleDemo = false;
+      await refresh();
+      toast("Schedule rebuilt. Completed records were kept.");
     }
     if (action === "clear-filters") {
       filter = "";
@@ -675,6 +843,8 @@ async function action(action, b) {
       draft = { ...draft, ...parsed, rawText: text };
       preview = null;
       draw();
+      $("#review-heading").focus({ preventScroll: true });
+      $("#review-heading").scrollIntoView({ block: "start" });
     }
     if (
       [
@@ -822,7 +992,7 @@ document.addEventListener("submit", async (e) => {
       preview = null;
       tab = "schedule";
       await refresh();
-      toast("Care plan published. Existing completed records were preserved.");
+      toast("30-day plan saved. Completed records were kept.");
     }
     if (e.target.getAttribute("id") === "task-form") {
       const data = Object.fromEntries(new FormData(e.target));
@@ -880,6 +1050,30 @@ document.addEventListener("change", (e) => {
 });
 app.addEventListener("change", async (e) => {
   try {
+    if (e.target.id === "schedule-date") {
+      scheduleDate = e.target.value;
+      draw();
+    }
+    if (e.target.name === "plan-status") {
+      planStatus = e.target.value;
+      draw();
+    }
+    if (e.target.name === "plan-caregiver") {
+      planCaregiver = e.target.value;
+      draw();
+    }
+    if (e.target.id === "calendar-month") {
+      calendarMonthValue = e.target.value || state.plan.startDate.slice(0, 7);
+      draw();
+    }
+    if (e.target.matches("[data-assign-task]")) {
+      await commit({
+        type: "task",
+        patch: { id: e.target.dataset.assignTask, who: e.target.value },
+      });
+      await refresh();
+      toast("Assignment saved.");
+    }
     if (e.target.getAttribute("id") === "day-filter") {
       filter = e.target.value;
       draw();
@@ -898,6 +1092,7 @@ app.addEventListener("change", async (e) => {
       if (file) await recovery.openImport(file);
     }
   } catch (err) {
+    if (err.status === 409) await refresh();
     toast(err.message, true);
   }
 });

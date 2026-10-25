@@ -89,12 +89,9 @@ try {
     .click();
   for (const box of await page.locator("#plan-form input[type=checkbox]").all())
     await box.check();
-  await page.getByRole("button", { name: "Publish 30-day plan" }).click();
-  await page.getByRole("heading", { name: "A rhythm for each day." }).waitFor();
-  await page.getByRole("button", { name: "Manage care", exact: true }).click();
-  await page
-    .getByRole("button", { name: "Open device and data", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Save 30-day plan" }).click();
+  await page.getByRole("heading", { name: "Daily schedule" }).waitFor();
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
   await page.locator('#device-status[data-offline-ready="true"]').waitFor();
   assert.equal(
     await page.evaluate(() => Boolean(navigator.serviceWorker.controller)),
@@ -146,7 +143,7 @@ try {
   // Reload and make a real care entry with the browser completely offline.
   await context.setOffline(true);
   await page.reload();
-  await page.getByRole("heading", { name: "A clearer day ahead." }).waitFor();
+  await page.getByRole("heading", { name: "Today", exact: true }).waitFor();
   assert.match(
     await page.locator(".heading .lead").innerText(),
     /Private Offline Patient Marker/,
@@ -168,9 +165,8 @@ try {
   );
   // A downloaded update must wait without replacing the open page or its unsaved draft.
   await context.setOffline(false);
-  await page.getByRole("button", { name: "Manage care", exact: true }).click();
   await page
-    .getByRole("button", { name: "Open care plan", exact: true })
+    .getByRole("button", { name: "Add instructions", exact: true })
     .click();
   await page
     .getByLabel("Patient name", { exact: true })
@@ -264,7 +260,7 @@ try {
   await context.setOffline(true);
   page = context.pages()[0];
   await page.goto(url);
-  await page.getByRole("heading", { name: "A clearer day ahead." }).waitFor();
+  await page.getByRole("heading", { name: "Today", exact: true }).waitFor();
   await page.getByRole("button", { name: "Records", exact: true }).click();
   await page.locator("#day-filter").fill("2026-10-25");
   await page.locator(".task.completed").first().waitFor();
@@ -272,20 +268,15 @@ try {
     await page.locator(".task.completed").first().innerText(),
     /Patient \/ self/,
   );
-  await page.getByRole("button", { name: "Manage care", exact: true }).click();
-  await page
-    .getByRole("button", { name: "Open device and data", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
   await page.locator('#device-status[data-offline-ready="true"]').waitFor();
   await page.screenshot({
     path: "test-results/stage3-server-stopped.png",
     fullPage: true,
   });
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
   await page
-    .getByRole("button", { name: "← Manage care", exact: true })
-    .click();
-  await page
-    .getByRole("button", { name: "Open care plan", exact: true })
+    .getByRole("button", { name: "Add instructions", exact: true })
     .click();
   await page.getByRole("button", { name: "Load fictional example" }).click();
   assert.match(

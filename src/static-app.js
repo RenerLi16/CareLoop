@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 const root = fileURLToPath(new URL("../", import.meta.url));
 export const APP_FILES = Object.freeze({
+  "/plan-views.js": ["src/plan-views.js", "text/javascript; charset=utf-8"],
   "/file-protection.js": [
     "src/file-protection.js",
     "text/javascript; charset=utf-8",

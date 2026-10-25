@@ -65,8 +65,8 @@ try {
     .locator("#plan-form input[type=checkbox]")
     .all())
     await checkbox.check();
-  await page.getByRole("button", { name: "Publish 30-day plan" }).click();
-  await page.getByRole("heading", { name: "A rhythm for each day." }).waitFor();
+  await page.getByRole("button", { name: "Save 30-day plan" }).click();
+  await page.getByRole("heading", { name: "Daily schedule" }).waitFor();
   assert.equal(await page.locator(".schedule-row").count(), 4);
   await page.getByRole("button", { name: "Today", exact: true }).click();
   await page.getByRole("button", { name: "Records", exact: true }).click();
@@ -86,7 +86,7 @@ try {
     /by Lan/,
   );
   await page.reload();
-  await page.getByRole("heading", { name: "A clearer day ahead." }).waitFor();
+  await page.getByRole("heading", { name: "Today", exact: true }).waitFor();
   await page.getByRole("button", { name: "Records", exact: true }).click();
   await page.locator("#day-filter").fill("2026-10-24");
   await page.locator(".task.completed").first().waitFor();
@@ -98,7 +98,7 @@ try {
   // A stale edit from a second tab cannot overwrite a newer change.
   const other = await context.newPage();
   await other.goto(url);
-  await other.getByRole("heading", { name: "A clearer day ahead." }).waitFor();
+  await other.getByRole("heading", { name: "Today", exact: true }).waitFor();
   await other.getByRole("button", { name: "Records", exact: true }).click();
   await other.locator("#day-filter").fill("2026-10-24");
   await other
@@ -138,7 +138,7 @@ try {
         'nav [data-tab="plan"], nav [data-tab="settings"], nav [data-tab="team"]',
       )
       .count(),
-    0,
+    3,
   );
   await page.screenshot({
     path: "test-results/bedside-stage2-desktop.png",
@@ -190,24 +190,21 @@ try {
     /Record weight/,
   );
   // Management is explicit and can be exited without publishing a plan.
-  await page.getByRole("button", { name: "Manage care", exact: true }).click();
   await page
-    .getByRole("button", { name: "Open care plan", exact: true })
+    .getByRole("button", { name: "Add instructions", exact: true })
     .click();
   await page
     .getByLabel("Patient name", { exact: true })
     .fill("Unsaved draft name");
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
   await page
-    .getByRole("button", { name: "← Manage care", exact: true })
+    .getByRole("button", { name: "Add instructions", exact: true })
     .click();
-  await page
-    .getByText("You have a care plan draft in this open page.", {
-      exact: false,
-    })
-    .waitFor();
-  await page
-    .getByRole("button", { name: "Back to Today", exact: true })
-    .click();
+  assert.equal(
+    await page.getByLabel("Patient name", { exact: true }).inputValue(),
+    "Unsaved draft name",
+  );
+  await page.getByRole("button", { name: "Today", exact: true }).click();
   assert.match(
     await page.locator(".heading .lead").innerText(),
     /Fictional Rivera/,
@@ -254,11 +251,8 @@ try {
     rollback: true,
   });
   await page.reload();
-  await page.getByRole("heading", { name: "A clearer day ahead." }).waitFor();
-  await page.getByRole("button", { name: "Manage care", exact: true }).click();
-  await page
-    .getByRole("button", { name: "Open caregivers", exact: true })
-    .click();
+  await page.getByRole("heading", { name: "Today", exact: true }).waitFor();
+  await page.getByRole("button", { name: "Caregivers", exact: true }).click();
   await page.getByLabel("Caregiver name", { exact: true }).fill("Amy");
   await page
     .getByRole("button", { name: "Add caregiver", exact: true })
@@ -407,9 +401,7 @@ try {
   await page.close();
   const reopened = await context.newPage();
   await reopened.goto(url);
-  await reopened
-    .getByRole("heading", { name: "A clearer day ahead." })
-    .waitFor();
+  await reopened.getByRole("heading", { name: "Today", exact: true }).waitFor();
   await reopened.getByRole("button", { name: "Records", exact: true }).click();
   await reopened.locator("#day-filter").fill("2026-10-24");
   await reopened.locator(".task.completed").first().waitFor();

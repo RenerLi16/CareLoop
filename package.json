@@ -16,7 +16,8 @@
     "test:browser": "node tests/browser.mjs",
     "build": "node scripts/build.mjs",
     "test:offline": "node tests/offline-browser.mjs",
-    "test:recovery": "node tests/recovery-browser.mjs"
+    "test:recovery": "node tests/recovery-browser.mjs",
+    "test:features": "node tests/full-features-browser.mjs"
   },
   "devDependencies": {
     "prettier": "^3.6.2"
