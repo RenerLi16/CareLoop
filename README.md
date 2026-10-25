@@ -1,127 +1,98 @@
-# CareLoop
+# CareLoop — bedside edition
 
-A shared care planner for the first 30 days after discharge. This is a modular rebuild of the supplied single-file prototype, with a browser interface, a Node server, and a persistent SQLite database.
+One patient, one tablet, one locally saved care record. This repository is being converted in separate commit stages. **Stage 1 is complete: local storage and account removal.** Offline installation and the larger bedside interface changes are still to come.
 
 ## Run locally
 
-Requires **Node.js 22.13 or newer** with `node:sqlite` support. There are no runtime packages to install.
+Use Node.js 22.13 or newer:
 
 ```sh
 npm start
 ```
 
-Open **http://127.0.0.1:3000** and create an account. Accounts require a password of at least 12 characters. Start a care plan, paste discharge text or load the fictional example, review every medication and unsupported instruction, check the schedule, and publish. Node 22 may print an experimental SQLite notice; this does not prevent startup.
+Open **http://127.0.0.1:3000**. Set up the patient’s nickname, plan start date, time zone, routine times, and optional caregiver names. There is no sign-in. Load the fictional example from Care plan to try the workflow.
 
-Use fictional data while evaluating the app. This implementation has not received clinical validation, an independent security review, or caregiver usability testing.
+No runtime dependencies need installing. For formatting and development checks, run `npm ci` first.
 
-## What works
+## Where the data goes
 
-- Conservative English-text import; no invented patient medications or guessed frequencies when reading fails.
-- Source text retained beside medication review fields; unsupported wording remains visible for explicit review.
-- Editable medication names, doses, frequencies, food rules, named spacing partners, and start/stop dates.
-- Custom breakfast, lunch, dinner, morning, and bedtime anchors.
-- A bounded backtracking scheduler that checks all entered pair constraints together, enforces food windows, and preserves exact interval groups. An unresolved schedule cannot be published.
-- Date-specific checks reject nonexistent local times and daylight-saving transitions that would break an exact interval or spacing requirement. These cases require manual review rather than silently changing instructions.
-- 30-day task generation; booking deadlines distinguished from confirmed appointment times.
-- Weight amounts and units, symptom entries, actual completion/skip times, notes, assignment, and corrections.
-- Past-due tasks, entered spacing violations, and duplicate-log review prompts. A duplicate-log prompt is not a clinical dosing threshold.
-- Completed and skipped records retained when a plan changes; superseded pending tasks archived. Existing assignments survive schedule edits.
-- Owner, editor, and viewer accounts; expiring, single-use invitation links; access removal and role changes. Invitations currently create **new accounts** in one care team per account. Share invitation links privately; the server sends no emails.
-- Shared updates polled every five seconds, with version checks to prevent stale writes from overwriting another caregiver's change.
-- Activity history with before/after task data stored on the server.
-- Password changes invalidate other sessions.
-- Calendar export with UTC event times and 15-minute alarms; optional browser notifications while the page is open and awake.
-- Owner-only backup download, validated restore, and active care-data deletion.
-- Responsive phone and desktop layouts, keyboard-accessible controls, escaped user content, and visible status messages.
+- Setup, caregiver names, care plans, task records, and activity history live in **IndexedDB in this browser on this device**.
+- The Node server serves only app files. It has no database, cookies, sign-in endpoints, care-data API, or upload handler. POST requests are rejected.
+- Schedule calculation, document parsing, calendar generation, and backup generation all run in the browser.
+- A successful save is shown only after the local database transaction commits. A failed save leaves the form open and shows an error.
+- Changes in another tab are announced locally with BroadcastChannel. Transaction version checks prevent stale edits from overwriting saved records. This is not remote synchronization.
+- A different browser, browser profile, tablet, host name, or port has a separate record. Keep using the same address. Private browsing, clearing site data, or browser eviction can remove the record.
+- Anyone who can open this browser can access the record. Caregiver names are self-reported labels, not authenticated identities. Use the tablet’s screen lock.
 
-## Supported scheduling semantics
+The app does not upload care data, run third-party analytics, or send instructions to external AI services. The static host can still receive ordinary requests for app files. Exported files, device/browser backups, and external calendar services are separate copies outside the app’s local record.
 
-These are software conventions, not medical recommendations. Users must check them against the original instructions.
+## What Stage 1 includes
 
-| Input                         | Behavior                                                                      |
-| ----------------------------- | ----------------------------------------------------------------------------- |
-| Once daily                    | One daytime slot, preferring the morning anchor                               |
-| Twice / three times daily     | Two / three daytime slots, at least four hours apart, preferring meal anchors |
-| Every 6 / 8 / 12 hours        | A complete group with exact intervals, including overnight doses              |
-| In the morning / at bedtime   | Fixed at the selected routine anchor                                          |
-| With food                     | Within 30 minutes of a selected meal                                          |
-| Before food                   | 15–60 minutes before a selected meal                                          |
-| After food                    | 15–60 minutes after a selected meal                                           |
-| At least N hours apart from X | Applies only to the named medication pair, across daily boundaries            |
+- Account-free first-time bedside setup, followed by opening directly to Today.
+- Local patient profile and caregiver list, including add, rename, and remove.
+- Separate task assignment and “Recorded by” labels, with a snapshot of the recorder’s name preserved in completion history.
+- Local plan publication, actual completion and skip times, weight and symptom entries, corrections, and activity history.
+- Existing conservative parser, meal rules, named medication spacing, exact intervals, impossible-schedule rejection, date/time-zone checks, and history preservation.
+- Client-generated calendar export and a plain-text bedside backup format (`careloop-bedside-1`). Restoring validates data before replacing the record. Backups include caregivers and activity history.
+- Local reset removes the active profile, caregivers, plan, tasks, and activity. It does not delete downloaded files or a previous server database.
 
-The solver uses a 15-minute grid and a finite search budget. Failure means it could not find a plan within the supported model; it does not prove no medically appropriate arrangement exists. Tapers, as-needed medication, alternating days, changing doses, and other unsupported instructions are not automatically scheduled. At most 15 medications are accepted.
+Calendar export asks before creating a file. Importing that file into a cloud calendar can copy care details outside this device. It is a snapshot; changes do not synchronize into previously imported events.
 
-Import expects a `MEDICATIONS` heading and one medication per line, for example:
+Page notifications still require an open, awake page and browser permission. They do not guarantee alerts when the tablet is locked or the browser is closed.
 
-```text
-MEDICATIONS
-Example A 10 mg in the morning
-Example B 5 mg once daily, at least 2 hours apart from Example A
-FOLLOW UP
-Primary care in 7 days
-```
+## Existing server data
 
-Drug and dose text remains as entered. Source-specific phrases that the parser cannot model require manual correction and acknowledgement. The user must explicitly enable any monitoring tasks requested in the paperwork.
+This stage **does not open, migrate, or delete** the previous `data/careloop.sqlite` database. If it exists, it is left untouched and remains ignored by Git. The new app starts a separate bedside record. Previous accounts and their data do not automatically appear in the browser.
 
-## Reminders and sharing
+The older `careloop-1` server backup format is not accepted as a bedside backup. A deliberate migration/export path can be added in a later stage; do not delete original files if they contain data you want to keep.
 
-The calendar file is a **snapshot**, not a live subscription. Check the receiving calendar's notification settings. If the plan changes, remove the old imported calendar before importing its replacement. Browser notifications stop when the page closes or the device sleeps.
+## Stage boundaries and commits
 
-The default server address is accessible only on this computer. To use different phones, host one shared server at an HTTPS address with persistent storage. Opening separate copies creates separate records. This repo does not provision hosting, email, SMS, push delivery, or calendar-provider integrations.
+1. **Local storage and account removal** — completed in this change. Suggested commit: `feat: move CareLoop to account-free local bedside storage`.
+2. **Bedside interaction** — larger Today controls, focused next-task display, clearer recording flow, and a separate Manage care area. Not started.
+3. **Offline installation** — app manifest, icons, service worker, app-file caching, offline reopening, and persistent-storage status. Not started.
+4. **Recovery and privacy verification** — additional backup protection, restore and deletion safeguards, final tablet/offline tests, and accurate privacy/demo copy. Not started.
 
-## Configuration and hosting
-
-| Variable         | Default     | Purpose                               |
-| ---------------- | ----------- | ------------------------------------- |
-| `PORT`           | `3000`      | Server port                           |
-| `HOST`           | `127.0.0.1` | Listening address                     |
-| `DATA_DIR`       | `./data`    | SQLite database directory             |
-| `SECURE_COOKIES` | unset       | Set to `true` for an HTTPS deployment |
-
-For hosting, place the Node process behind an HTTPS reverse proxy that preserves the external Host header, set `SECURE_COOKIES=true`, bind to the appropriate internal interface, and mount a persistent private data directory. Run one server process for this SQLite deployment. Restrict access to database files and backups, use encrypted storage, and arrange tested server backups and monitoring. Database contents and downloaded JSON backups are not encrypted by the application.
-
-Passwords are salted with scrypt. Session tokens are random, hashed in the database, and delivered in HttpOnly, SameSite=Strict cookies. Mutations enforce same-origin requests when an Origin header is supplied. The app includes a restrictive content security policy, per-team authorization, bounded input sizes, and a basic process-local sign-in rate limit. This does not replace an independent security review before real patient use. There is no email verification or forgotten-password recovery service yet.
-
-Deleting care data removes the active plan, tasks, invitations, and old activity, leaving team accounts and one deletion activity entry. External calendar copies, downloaded files, and administrator backups require separate deletion. Account deletion and multi-team membership are not implemented.
+Pause between stages for the user to commit. The app currently still needs the static server for a fresh load or reload. Do not describe Stage 1 as an installed offline app.
 
 ## Tests
 
 ```sh
 npm test
+npm run format:check
 ```
 
-The built-in test suite covers parsing failures, review gates, named spacing, food timing, exact intervals, impossible plans, durations, history preservation, actual-time warnings, daylight saving, calendar formatting, authentication, roles, invitation reuse, competing writes, backup/restore, deletion, and cross-origin requests. Integration tests start a temporary server with a temporary database and remove it afterward.
+Tests cover the original scheduler, local record mutations, setup validation, caregiver attribution, history preservation, backup validation, stale-write rejection, and removal of server data endpoints. Server tests use a temporary port.
 
-Browser regression checks use Playwright as an optional development tool:
+Optional browser checks use Playwright:
 
 ```sh
 npm install --no-save playwright
 npx playwright install chromium
-node tests/browser.mjs
+npm run test:browser
 ```
 
-Set `PLAYWRIGHT_MODULE` or `PLAYWRIGHT_CHROMIUM_EXECUTABLE` to use an existing installation. The checks exercise account creation, import, review, publication, task logging, a second caregiver joining, shared records, search, and phone-width overflow. Screenshots are written to ignored `test-results/`.
+You can set `PLAYWRIGHT_MODULE` and `PLAYWRIGHT_CHROMIUM_EXECUTABLE` to use an existing installation. Browser checks use fresh, isolated browser profiles, fictional data, and the real IndexedDB adapter. They cover reload/reopen persistence, conflicting tabs, transaction rollback, failed-save UI, separate-profile isolation, caregiver entry, recording, mobile width, and the absence of care-data requests. Screenshots go to ignored `test-results/`.
 
-## Project structure
+## Structure
 
 ```text
-src/domain.js          Pure parsing, validation, scheduling, tasks, warnings, calendar export
-src/server.js          HTTP API, authentication, permissions, SQLite persistence
-public/app.js          Browser interface and shared-record refresh
-public/style.css       Responsive layout and visual system
-public/index.html      App entry point
-public/sample.txt      Explicitly fictional import example
-tests/domain.test.js   Scheduling and data-model regression tests
-tests/server.test.js   End-to-end API and permission tests
-tests/browser.mjs      Browser workflow and layout checks
+src/domain.js              Parsing, scheduling, task generation, warnings, calendar text
+src/care-record.js         Local record validation, mutation, attribution, backup format
+src/server.js              Static development server only
+public/storage.js          IndexedDB transactions and same-device change notifications
+public/app.js              Interface, local setup, care workflow, file exports
+public/style.css           Responsive layout
+public/index.html          App entry point
+public/sample.txt          Fictional document example
+tests/domain.test.js       Scheduler regression tests
+tests/care-record.test.js  Local record and backup regression tests
+tests/server.test.js       Static-server and endpoint-removal tests
+tests/browser.mjs          Real-browser workflow and local-storage checks
 ```
 
-## Remaining work before broader use
+## Configuration
 
-- Clinical review of the supported timing conventions and warning behavior, followed by caregiver usability testing.
-- Hosting, operational backups, security/privacy review appropriate to the actual deployment, and account recovery/deletion.
-- Professionally reviewed translations. The rebuilt interface currently supports English; it does not advertise incomplete Spanish or Vietnamese coverage.
-- Optional image/PDF text recognition with mandatory human verification. Screenshot import is not implemented.
-- Optional live calendar synchronization and reliable hosted push reminders.
+Only `HOST` (default `127.0.0.1`) and `PORT` (default `3000`) are used by the static server. It does not read `.env` automatically. `DATA_DIR` and `SECURE_COOKIES` are no longer used.
 
-No competition submission, deployment, or real patient-data import is performed by this repository.
+This remains a prototype with no clinical validation. Food windows and supported frequency conventions are scheduling assumptions to review against the original paperwork. English text entry is supported; photo import, translations, tapering regimens, as-needed dosing, and closed-app alarms are not implemented.

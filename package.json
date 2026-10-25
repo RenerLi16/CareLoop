@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "A shared discharge-to-routine care planner",
+  "description": "An account-free bedside care planner with on-device storage",
   "engines": {
     "node": ">=22.13"
   },

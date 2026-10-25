@@ -4,8 +4,11 @@ import {
   parseDischarge,
   compilePlan,
   logWarnings,
-  minutes,
+  toICS,
 } from "/domain.js";
+import { loadRecord, saveChange, onRecordChange } from "/storage.js";
+import { makeBackup } from "/care-record.js";
+
 const $ = (s) => document.querySelector(s),
   esc = (s) =>
     String(s ?? "").replace(
@@ -23,18 +26,18 @@ let state = null,
   tab = "today",
   draft = null,
   preview = null,
-  authMode = "login",
+  draftVersion = null,
   filter = "",
   busy = false,
   reminderTimer = null,
   renderedTab = null;
 const app = $("#app");
-const invite = new URLSearchParams(location.search).get("invite");
-if (invite) authMode = "register";
 const localDate = () =>
   new Date().toLocaleDateString("en-CA", {
     timeZone:
-      state?.plan?.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone,
+      state?.plan?.timeZone ||
+      state?.profile?.timeZone ||
+      Intl.DateTimeFormat().resolvedOptions().timeZone,
   });
 const localInput = (iso = new Date().toISOString()) => {
   const d = new Date(iso);
@@ -44,29 +47,28 @@ const fmt = (iso) =>
   new Intl.DateTimeFormat("en", {
     dateStyle: "medium",
     timeStyle: "short",
-    timeZone: state?.plan?.timeZone,
+    timeZone: state?.plan?.timeZone || state?.profile?.timeZone,
   }).format(new Date(iso));
-const canEdit = () => state?.role !== "viewer";
 function toast(message, error = false) {
   $("#toast").textContent = message;
   $("#toast").className = error ? "show error" : "show";
   setTimeout(() => ($("#toast").className = ""), 6500);
 }
-async function api(url, data) {
-  const res = await fetch(url, {
-    method: data ? "POST" : "GET",
-    headers: data ? { "Content-Type": "application/json" } : {},
-    body: data ? JSON.stringify(data) : undefined,
-  });
-  const value = await res.json();
-  if (!res.ok)
-    throw Object.assign(new Error(value.error || "Request failed"), {
-      status: res.status,
-    });
-  return value;
+async function commit(command, expectedVersion = state.version) {
+  state = await saveChange(command, expectedVersion);
+}
+function download(name, content, type) {
+  const url = URL.createObjectURL(new Blob([content], { type }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = name;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 async function refresh(render = true) {
-  state = await api("/api/state");
+  state = await loadRecord();
   if (render) draw();
 }
 const button = (action, label, cls = "primary", extra = "") =>
@@ -80,15 +82,33 @@ const select = (label, name, value, choices) =>
       return `<option value="${esc(v)}" ${v === value ? "selected" : ""}>${esc(l)}</option>`;
     })
     .join("")}</select></label>`;
-function auth() {
-  app.innerHTML = `<main class="auth"><a class="brand" href="/">✳ <span>CareLoop</span></a><div class="eyebrow">CARE, TOGETHER</div><h1>A little more clarity.<br>A little less worry.</h1><p class="lead">Turn discharge instructions into a shared routine for the days ahead.</p><section class="card"><h2>${authMode === "login" ? "Welcome back" : invite ? "Join your family’s care team" : "Start your care team"}</h2><form id="auth-form">${authMode === "register" ? field("Your name", "name", "") + (!invite ? field("Care team name", "familyName", "") : "") : ""}${field("Email", "email", "", "email", 'required autocomplete="email"')}${field("Password", "password", "", "password", 'required minlength="12" maxlength="256" autocomplete="' + (authMode === "login" ? "current-password" : "new-password") + '"')}<p class="muted">Use at least 12 characters. Your email is used for sign-in; no email is sent.</p><button class="primary" type="submit">${authMode === "login" ? "Sign in" : "Create account"}</button></form><button class="text" data-action="auth-switch">${authMode === "login" ? "New here? Create a care team" : "Already have an account? Sign in"}</button>${invite ? '<p class="notice">This invitation works for a new account. Sign in with an existing account only if it already belongs to this team.</p>' : ""}</section><p class="muted">A care coordination tool. Review every instruction against the original discharge paperwork.</p></main>`;
+function setup() {
+  const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  app.innerHTML = `<main class="setup"><a class="brand" href="/">✳ <span>CareLoop</span></a><div class="eyebrow">YOUR BEDSIDE CARE STATION</div><h1>One tablet.<br>One care record.</h1><p class="lead">Set up this device. No account or email address needed.</p><section class="card"><h2>Who are we caring for?</h2><form id="setup-form">${field("Patient name or nickname", "patient", "", "text", 'required maxlength="100" autocomplete="off"')}${field("Plan start date", "startDate", localDate(), "date", "required")}${select("Patient’s time zone", "timeZone", zone, [...new Set([zone, ...Intl.supportedValuesOf("timeZone")])])}<details><summary>Meal and routine times</summary><div class="grid three">${Object.entries(
+    DEFAULT_PREFS,
+  )
+    .map(([key, value]) =>
+      field(
+        key[0].toUpperCase() + key.slice(1),
+        `pref-${key}`,
+        value,
+        "time",
+        "required",
+      ),
+    )
+    .join(
+      "",
+    )}</div></details><label>Caregiver names (optional, one per line)<textarea name="names" rows="3" placeholder="Lan&#10;Minh"></textarea></label><p class="muted">Caregiver names are labels for this tablet, not verified identities. Anyone with access to this browser can use the record.</p><button type="submit" class="primary">Set up this device</button></form></section><p class="muted">Care information is saved in this browser on this device. Clearing site data or using a different browser will not preserve this record. Offline installation is coming in a later stage.</p></main>`;
+}
+function storageFailure(message) {
+  app.innerHTML = `<main class="setup"><h1>Local storage needs attention.</h1><section class="alert" role="alert"><p>${esc(message)}</p><p>CareLoop has not started a temporary record. Your existing data has not been replaced.</p>${button("retry-storage", "Try opening storage again", "secondary")}</section></main>`;
 }
 function draw() {
-  if (!state) {
-    auth();
+  if (!state?.profile) {
+    setup();
     return;
   }
-  app.innerHTML = `<div class="shell"><aside><a class="brand" href="/">✳ <span>CareLoop</span></a><div class="team-label">${esc(state.familyName)}</div><nav aria-label="Main navigation">${[
+  app.innerHTML = `<div class="shell"><aside><a class="brand" href="/">✳ <span>CareLoop</span></a><div class="team-label">${esc(state.profile.patient)} · Bedside tablet</div><nav aria-label="Main navigation">${[
     ["today", "◷", "Today"],
     ["plan", "▤", "Care plan"],
     ["schedule", "◴", "Daily schedule"],
@@ -102,14 +122,14 @@ function draw() {
     )
     .join(
       "",
-    )}</nav><div class="aside-bottom"><span class="avatar">${esc(state.user.name.slice(0, 1))}</span><div><b>${esc(state.user.name)}</b><small>${esc(state.role)}</small></div>${button("logout", "Sign out", "text")}</div></aside><main class="main"><header><span class="eyebrow">THE NEXT 30 DAYS, TOGETHER</span><span class="sync">● Shared record · updates every 5 seconds</span></header><div id="content">${{ today: today, plan: planView, schedule: scheduleView, team: teamView, records: recordsView, settings: settingsView }[tab]()}</div><footer>CareLoop organizes the instructions you enter. It does not diagnose, recommend treatment, or check all possible medication interactions.</footer></main></div>`;
+    )}</nav><div class="aside-bottom"><div><b>Saved on this device</b><small>No account · no remote sharing</small></div></div></aside><main class="main"><header><span class="eyebrow">THE NEXT 30 DAYS, TOGETHER</span><span class="sync">● Saved in this browser</span></header><div id="content">${{ today: today, plan: planView, schedule: scheduleView, team: teamView, records: recordsView, settings: settingsView }[tab]()}</div><footer>CareLoop organizes the instructions you enter. It does not diagnose, recommend treatment, or check all possible medication interactions.</footer></main></div>`;
   if (renderedTab !== tab) {
     window.scrollTo(0, 0);
     renderedTab = tab;
   }
 }
 function emptyView() {
-  return `<section class="empty card"><span class="big-icon">✳</span><h2>One plan. Everyone on the same page.</h2><p>Start with the discharge paperwork. Review each instruction, build a schedule, and share the tasks.</p>${canEdit() ? button("new-plan", "Create a care plan") : "<p>Ask your team owner to create the care plan.</p>"}</section>`;
+  return `<section class="empty card"><span class="big-icon">✳</span><h2>One plan. Everyone on the same page.</h2><p>Start with the discharge paperwork. Review each instruction, build a schedule, and record care on this tablet.</p>${button("new-plan", "Create a care plan")}</section>`;
 }
 function heading(title, sub, actions = "") {
   return `<div class="heading"><div><h1>${title}</h1><p class="lead">${sub}</p></div>${actions}</div>`;
@@ -146,9 +166,7 @@ function today() {
       state.plan
         ? `Care for ${esc(state.plan.patient)} · ${esc(state.plan.timeZone)}`
         : "Your family’s care starts here.",
-      state.plan
-        ? '<a class="button secondary" href="/api/calendar">Export calendar</a>'
-        : "",
+      state.plan ? button("calendar", "Export calendar", "secondary") : "",
     ) +
     (!state.plan
       ? emptyView()
@@ -158,14 +176,14 @@ function today() {
 function taskRow(t) {
   const person = state.team.find((x) => x.id === t.who),
     late = t.status === "todo" && Date.parse(t.dueAt) < Date.now() - 3600000;
-  return `<article class="task ${t.status === "done" ? "completed" : ""}"><div class="time">${esc(t.time)}<small>${esc(t.kind)}</small></div><div class="task-detail"><b>${esc(t.label)}</b><small>${esc(person?.name || "Unassigned")}${t.actualAt ? " · Recorded " + esc(fmt(t.actualAt)) : ""}</small>${t.value ? `<p>${esc(typeof t.value === "object" ? t.value.amount + " " + t.value.unit : t.value)}</p>` : ""}${t.note ? `<p class="muted">${esc(t.note)}</p>` : ""}</div><span class="badge ${late ? "late" : ""}">${late ? "Past due" : esc(t.status)}</span>${canEdit() ? button("edit-task", t.status === "todo" ? "Record / assign" : "Edit record", "secondary", `data-id="${esc(t.id)}"`) : ""}</article>`;
+  return `<article class="task ${t.status === "done" ? "completed" : ""}"><div class="time">${esc(t.time)}<small>${esc(t.kind)}</small></div><div class="task-detail"><b>${esc(t.label)}</b><small>${esc(person?.name || "Unassigned")}${t.actualAt ? " · Recorded " + esc(fmt(t.actualAt)) + (t.recordedByName ? " by " + esc(t.recordedByName) : "") : ""}</small>${t.value ? `<p>${esc(typeof t.value === "object" ? t.value.amount + " " + t.value.unit : t.value)}</p>` : ""}${t.note ? `<p class="muted">${esc(t.note)}</p>` : ""}</div><span class="badge ${late ? "late" : ""}">${late ? "Past due" : esc(t.status)}</span>${button("edit-task", t.status === "todo" ? "Record / assign" : "Edit record", "secondary", `data-id="${esc(t.id)}"`)}</article>`;
 }
 function newDraft() {
   return {
-    patient: "",
-    startDate: localDate(),
-    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-    prefs: { ...DEFAULT_PREFS },
+    patient: state.profile.patient,
+    startDate: state.profile.startDate,
+    timeZone: state.profile.timeZone,
+    prefs: { ...state.profile.prefs },
     meds: [],
     followups: [],
     flags: [],
@@ -192,18 +210,15 @@ function medEditor(m, i) {
   ])}${field("Separate from medication", `gapTarget-${i}`, m.gapTarget, "text", 'list="med-names" placeholder="Exact name, or leave blank"')}${field("Minimum gap (hours)", `gapHours-${i}`, m.gapHours ?? "", "number", 'min="0.25" max="24" step="0.25"')}${field("Start date (optional)", `startDate-${i}`, m.startDate, "date")}${field("Stop after (optional)", `endDate-${i}`, m.endDate, "date")}</div><div class="between"><label class="check"><input name="reviewed-${i}" type="checkbox" ${m.reviewed ? "checked" : ""}>I checked these fields against the original instructions.</label>${button("remove-med", "Remove", "text danger", `data-index="${i}"`)}</div></fieldset>`;
 }
 function planView() {
-  if (!canEdit())
-    return (
-      heading("Care plan", "Your access is view only.") +
-      (state.plan
-        ? `<section class="card"><h2>${esc(state.plan.patient)}</h2><p>Starts ${esc(state.plan.startDate)} · ${esc(state.plan.timeZone)}</p>${state.plan.meds.map((m) => `<p><b>${esc(m.drug)} ${esc(m.dose)}</b> · ${esc(m.freq)}<br>${esc(m.source)}</p>`).join("")}</section>`
-        : emptyView())
-    );
-  draft ??= state.plan ? structuredClone(state.plan) : newDraft();
+  if (!draft) {
+    draft = state.plan ? structuredClone(state.plan) : newDraft();
+    draftVersion = state.version;
+  }
   return (
     heading(
       "From paperwork to a plan.",
       "Review every detail before publishing. Completed care records stay in the history.",
+      button("reload-plan", "Reload saved plan", "secondary"),
     ) +
     `<section class="card"><h2>1. Bring in the instructions</h2><p class="muted">Paste English discharge text with MEDICATIONS and FOLLOW UP headings, or load a text file. Photos and scanned PDFs are not supported.</p><label>Discharge text<textarea id="raw-text" rows="6" placeholder="MEDICATIONS&#10;Medication name 10 mg once daily">${esc(draft.rawText || "")}</textarea></label><div class="actions">${button("parse", "Read instructions")}${button("sample", "Load fictional example", "secondary")}<label class="file-label">Load .txt<input id="text-upload" type="file" accept=".txt,text/plain"></label></div><p class="muted">Reading text replaces the medication draft below. Your published plan stays intact until you publish.</p></section><form id="plan-form"><section class="card"><h2>2. Review the care plan</h2><div class="grid three">${field("Patient name", "patient", draft.patient, "text", "required")}${field("Plan start date", "startDate", draft.startDate, "date", "required")}${select("Patient’s time zone", "timeZone", draft.timeZone, [...new Set([draft.timeZone, ...Intl.supportedValuesOf("timeZone")])])}</div>${draft.unresolved?.length ? `<section class="notice"><h3>Instructions requiring review</h3>${draft.unresolved.map((u, i) => `<label class="check"><input name="resolve-${i}" type="checkbox" ${u.resolved ? "checked" : ""}><span>${esc(u.reason)} ${u.text ? `<q>${esc(u.text)}</q>` : ""}<small>I entered this manually, or verified it is outside the supported plan.</small></span></label>`).join("")}</section>` : ""}<datalist id="med-names">${draft.meds.map((m) => `<option value="${esc(m.drug)}">`).join("")}</datalist>${draft.meds.map(medEditor).join("")}${button("add-med", "+ Add medication", "secondary")}<details><summary>Meal and routine times</summary><p class="muted">These define what the scheduler means by food, morning, and bedtime. Unsupported or conflicting rules prevent publication. “Twice daily” uses two daytime slots at least four hours apart; an exact interval must be entered as “every 12 hours.”</p><div class="grid three">${Object.keys(
       DEFAULT_PREFS,
@@ -296,7 +311,7 @@ function scheduleView() {
     heading(
       "A rhythm for each day.",
       `Plan revision ${state.revision} · ${esc(p.timeZone)}`,
-      '<a class="button secondary" href="/api/calendar">Export calendar</a>',
+      button("calendar", "Export calendar", "secondary"),
     ) +
     `<section class="card"><h2>Medication schedule</h2><p class="muted">${esc(p.startDate)} · 30 days. Individual start and stop dates apply.</p>${p.meds.map((m) => `<article class="schedule-row"><div><h3>${esc(m.drug)}</h3><p>${esc(m.dose)} · ${esc(m.freq)}</p><small>${m.meal === "any" ? "No food rule entered" : esc(m.meal) + " " + esc(m.mealTarget && m.mealTarget !== "any" ? m.mealTarget : "food")}${m.gapTarget ? " · ≥ " + esc(m.gapHours) + "h from " + esc(m.gapTarget) : ""}</small><blockquote>${esc(m.source || "Manually entered and reviewed")}</blockquote></div><div class="time-pills">${p.compiled.times[m.id].map((t) => `<span>${t}</span>`).join("")}</div></article>`).join("")}</section><section class="card"><h2>Your routine anchors</h2><div class="anchor-list">${Object.entries(
       p.prefs,
@@ -309,18 +324,18 @@ function teamView() {
   return (
     heading(
       "Care is a team effort.",
-      "See who is helping, and make the work visible.",
-      state.role === "owner" ? button("invite", "Invite a caregiver") : "",
+      "Names help record who did what on this tablet. They do not verify identity.",
     ) +
-    `<div id="invite-result"></div><div class="team-grid">${state.team
+    `<section class="card"><form id="caregiver-form"><h2>Add a caregiver</h2>${field("Caregiver name", "name", "", "text", 'required maxlength="100"')}<button type="submit" class="primary">Add caregiver</button></form></section><div class="team-grid">${state.team
+      .filter((m) => !m.archived)
       .map((m) => {
         const tasks = state.tasks.filter((t) => !t.archived && t.who === m.id),
           done = tasks.filter((t) => t.status === "done").length;
-        return `<section class="card person"><span class="avatar large">${esc(m.name[0])}</span><h2>${esc(m.name)}</h2><p class="muted">${esc(m.role)} · ${esc(m.email)}</p><div class="person-stats"><div><strong>${tasks.length}</strong><small>Assigned</small></div><div><strong>${done}</strong><small>Completed</small></div><div><strong>${new Set(tasks.filter((t) => t.status === "done").map((t) => t.date)).size}</strong><small>Days helped</small></div></div>${state.role === "owner" && m.id !== state.user.id ? `${button("change-role", m.role === "viewer" ? "Allow editing" : "Make view only", "secondary", `data-id="${m.id}" data-role="${m.role === "viewer" ? "editor" : "viewer"}"`)} ${button("remove-member", "Remove access", "text danger", `data-id="${m.id}"`)}` : ""}</section>`;
+        return `<section class="card person"><span class="avatar large">${esc(m.name[0])}</span><h2>${esc(m.name)}</h2><p class="muted">Local caregiver label</p><div class="person-stats"><div><strong>${tasks.length}</strong><small>Assigned</small></div><div><strong>${done}</strong><small>Completed</small></div></div>${m.id !== "patient" ? button("rename-caregiver", "Rename", "secondary", `data-id="${esc(m.id)}"`) + button("remove-caregiver", "Remove", "text danger", `data-id="${esc(m.id)}"`) : ""}</section>`;
       })
       .join(
         "",
-      )}</div><p class="muted">${state.tasks.filter((t) => !t.archived && !t.who).length} tasks are unassigned. Assign them from Today or Records.</p>`
+      )}</div><p class="muted">${state.tasks.filter((t) => !t.archived && !t.who).length} tasks are unassigned. Assign them from Today or Records. Removing a name keeps past records.</p>`
   );
 }
 function recordsView() {
@@ -341,23 +356,30 @@ function recordsView() {
             )
             .join("")
         : "<p>No records yet.</p>"
-    }</div><p class="muted">Showing up to 100 matching tasks. Use search to find a date or medication.</p></section><section class="card"><h2>Recent activity</h2>${state.audit.map((a) => `<p>${esc(a.action)}<small>${esc(a.name || "Former team member")} · ${esc(fmt(a.at))}</small>${a.details ? `<small>Change: ${esc(JSON.parse(a.details).before.status)} → ${esc(JSON.parse(a.details).after.status)} · actual time ${esc(JSON.parse(a.details).before.actualAt || "not recorded")} → ${esc(JSON.parse(a.details).after.actualAt || "not recorded")}</small>` : ""}</p>`).join("")}</section>`
+    }</div><p class="muted">Showing up to 100 matching tasks. Use search to find a date or medication.</p></section><section class="card"><h2>Recent activity</h2>${state.audit
+      .slice(0, 50)
+      .map(
+        (a) =>
+          `<p>${esc(a.action)}<small>${esc(a.name || "On this device")} · ${esc(fmt(a.at))}</small>${a.details ? `<small>Change: ${esc(JSON.parse(a.details).before.status)} → ${esc(JSON.parse(a.details).after.status)} · actual time ${esc(JSON.parse(a.details).before.actualAt || "not recorded")} → ${esc(JSON.parse(a.details).after.actualAt || "not recorded")}</small>` : ""}</p>`,
+      )
+      .join("")}</section>`
   );
 }
 function settingsView() {
   return (
     heading(
-      "Your data, your choices.",
-      "Tools for reminders, backups, and managing the care record.",
+      "Your data, on this device.",
+      "Local care records, optional exports, and reminders.",
     ) +
-    `<section class="card"><h2>Account security</h2><form id="password-form">${field("Current password", "currentPassword", "", "password", 'required autocomplete="current-password"')}${field("New password", "newPassword", "", "password", 'required minlength="12" maxlength="256" autocomplete="new-password"')}<button type="submit" class="secondary">Change password</button></form><p class="muted">Changing your password signs out your other devices.</p></section><section class="card"><h2>Reminders</h2><p>Export pending tasks to Apple Calendar, Google Calendar, or another calendar app. The file includes a reminder 15 minutes before each task. Check your calendar’s notification settings after importing.</p><a class="button primary" href="/api/calendar">Download calendar (.ics)</a><p class="muted">This is a snapshot. Plan edits do not update imported events. Remove the old imported calendar before importing a replacement to avoid stale or duplicate reminders.</p>${button("reminders", "Enable reminders while this page is open", "secondary")}<p class="muted">Page reminders require browser permission and an open, awake page. They are an extra aid; use your calendar for background reminders.</p></section><section class="card"><h2>Backup and privacy</h2><p>The server stores your team’s record. Signed-in team members can access it according to their role. No external AI or analytics services receive the discharge text.</p><p class="muted">Backups contain sensitive information in plain text. Keep them somewhere private. The server database also needs encrypted disks and HTTPS when hosted.</p>${state.role === "owner" ? `<div class="actions"><a class="button secondary" href="/api/backup">Download backup</a><label class="file-label">Restore backup<input type="file" id="backup-upload" accept=".json,application/json"></label></div><p class="muted">Restoring replaces this team’s care plan and history. Team accounts and access stay as they are.</p><hr><h3>Delete care data</h3><p>Deletes the plan, tasks, and previous activity from the active database. Download a backup first if needed. Team accounts remain. Server backups and calendar copies must be deleted separately.</p>${button("reset", "Delete care data", "danger-button")}` : "<p>Only the team owner can export, restore, or delete the care record.</p>"}</section><section class="card"><h2>Supported scope</h2><p>English text entry; fixed daily frequencies; food timing windows; named medication spacing rules; 30-day plans. Tapers, as-needed dosing, changing dose amounts, and other unsupported instructions require separate review. Automatic translation and photo reading are not included.</p><p>No clinical validation has been performed. Test with fictional data until the workflow and scheduling rules have been reviewed.</p></section>`
+    `<section class="card"><h2>Local storage</h2><p>The plan and care history are saved in this browser’s database on this device. They are not sent to the app server. There are no accounts or remote family access.</p><p class="muted">Anyone who can open this browser can read or change the record. Use the tablet’s screen lock. Clearing browser data can delete the record. Backups and calendar exports create separate copies.</p></section><section class="card"><h2>Reminders</h2><p>Page reminders require permission and an open, awake page. They cannot guarantee alarms when the tablet is locked or the browser is closed.</p>${button("reminders", "Enable reminders while this page is open", "secondary")}<h3>Optional calendar export</h3><p class="muted">The file contains care details and a 15-minute reminder. Importing it into a cloud calendar can send those details outside this device. This is a snapshot; later plan edits do not update imported events.</p>${button("calendar", "Download calendar (.ics)", "secondary")}</section><section class="card"><h2>Backup and restore</h2><p>A backup is a plain-text file containing the patient’s care record and activity history. Keep it private. Nothing is uploaded when you download or restore a backup here.</p><div class="actions">${button("backup", "Download backup", "secondary")}<label class="file-label">Restore bedside backup<input type="file" id="backup-upload" accept=".json,application/json"></label></div><p class="muted">Restoring replaces the bedside record in this browser. The older server version’s backups are a different format and cannot be restored here yet.</p><hr><h3>Delete this device’s care data</h3><p>Removes setup, caregivers, plan, records, and activity from this browser’s active record. Exported files and the old server database are separate copies.</p>${button("reset", "Delete care data", "danger-button")}</section><section class="card"><h2>Supported scope</h2><p>English text entry; fixed daily frequencies; food timing windows; named medication spacing rules; 30-day plans. Unsupported instructions require review. Translation and photo reading are not included.</p><p>Offline installation and additional backup protections are planned for later stages. No clinical validation has been performed; use fictional data while testing.</p></section>`
   );
 }
 function editTask(id) {
   const t = state.tasks.find((t) => t.id === id);
   const dialog = document.createElement("dialog");
   dialog.id = "task-dialog";
-  dialog.innerHTML = `<form id="task-form"><h2>${esc(t.label)}</h2><p>${esc(t.date)} at ${esc(t.time)} · ${esc(state.plan?.timeZone)}</p><input name="id" type="hidden" value="${esc(id)}">${select("Assigned caregiver", "who", t.who, [["", "Unassigned"], ...state.team.filter((m) => m.role !== "viewer").map((m) => [m.id, m.name])])}${select(
+  dialog.dataset.version = state.version;
+  dialog.innerHTML = `<form id="task-form"><h2>${esc(t.label)}</h2><p>${esc(t.date)} at ${esc(t.time)} · ${esc(state.plan?.timeZone)}</p><input name="id" type="hidden" value="${esc(id)}">${select("Assigned caregiver", "who", t.who, [["", "Unassigned"], ...state.team.filter((m) => !m.archived).map((m) => [m.id, m.name])])}${select(
     "Status",
     "status",
     t.status,
@@ -366,7 +388,7 @@ function editTask(id) {
       ["done", "Completed"],
       ["skipped", "Skipped"],
     ],
-  )}${field("Actual completion / skip time (your device’s time zone)", "actualAt", localInput(t.actualAt || undefined), "datetime-local")}<p class="muted">For a past task, enter when it actually happened. This can differ from when you record it.</p>${t.kind === "weight" ? field("Recorded weight", "value", t.value?.amount || "", "number", 'min="0.01" step="0.01"') + select("Unit", "unit", t.value?.unit || "kg", ["kg", "lb"]) : t.kind === "symptoms" ? `<label>Symptoms (write “none” if none)<textarea name="value">${esc(t.value || "")}</textarea></label>` : ""}<label>Note / reason for correction<textarea name="note">${esc(t.note)}</textarea></label><div class="actions"><button type="submit" class="primary">Save record</button>${button("close-dialog", "Cancel", "secondary")}</div></form>`;
+  )}${select("Recorded by", "recordedBy", t.recordedBy || "", [["", "Choose who is recording"], ...state.team.filter((m) => !m.archived).map((m) => [m.id, m.name])])}${field("Actual completion / skip time (your device’s time zone)", "actualAt", localInput(t.actualAt || undefined), "datetime-local")}<p class="muted">For a past task, enter when it actually happened. This can differ from when you record it.</p>${t.kind === "weight" ? field("Recorded weight", "value", t.value?.amount || "", "number", 'min="0.01" step="0.01"') + select("Unit", "unit", t.value?.unit || "kg", ["kg", "lb"]) : t.kind === "symptoms" ? `<label>Symptoms (write “none” if none)<textarea name="value">${esc(t.value || "")}</textarea></label>` : ""}<label>Note / reason for correction<textarea name="note">${esc(t.note)}</textarea></label><div class="actions"><button type="submit" class="primary">Save record</button>${button("close-dialog", "Cancel", "secondary")}</div></form>`;
   document.body.append(dialog);
   dialog.showModal();
   dialog.addEventListener("close", () => dialog.remove());
@@ -390,20 +412,47 @@ document.addEventListener("click", (e) => {
 async function action(action, b) {
   if (busy) return;
   try {
-    if (action === "auth-switch") {
-      authMode = authMode === "login" ? "register" : "login";
-      auth();
+    if (action === "retry-storage") {
+      await refresh();
+      return;
     }
-    if (action === "logout") {
-      await api("/api/logout", {});
-      state = null;
+    if (action === "reload-plan") {
+      if (!confirm("Discard this draft and reload the saved care plan?"))
+        return;
       draft = null;
-      filter = "";
-      clearInterval(reminderTimer);
-      draw();
+      preview = null;
+      await refresh();
+      return;
+    }
+    if (action === "calendar") {
+      if (
+        !confirm(
+          "This file contains care details. Importing it into a cloud calendar can copy them outside this device. Export it?",
+        )
+      )
+        return;
+      download(
+        "careloop.ics",
+        toICS(state.tasks),
+        "text/calendar;charset=utf-8",
+      );
+    }
+    if (action === "backup") {
+      if (
+        !confirm(
+          "Download a plain-text backup containing this patient’s care data? Store it privately.",
+        )
+      )
+        return;
+      download(
+        "careloop-bedside-backup.json",
+        JSON.stringify(makeBackup(state), null, 2),
+        "application/json",
+      );
     }
     if (action === "new-plan") {
       draft = newDraft();
+      draftVersion = state.version;
       tab = "plan";
       draw();
     }
@@ -462,28 +511,21 @@ async function action(action, b) {
         $("#preview").scrollIntoView({ behavior: "smooth", block: "center" });
     }
     if (action === "edit-task") editTask(b.dataset.id);
-    if (action === "invite") {
-      const role = confirm(
-        "Allow this person to edit the care record? Choose Cancel to create view-only access.",
-      )
-        ? "editor"
-        : "viewer";
-      const { token } = await api("/api/invite", { role });
-      $("#invite-result").innerHTML =
-        `<section class="success"><h3>Invitation ready · ${role === "editor" ? "Can edit" : "View only"}</h3><p>Share this link privately. It expires after 48 hours and works once, for a new account.</p><label>Invitation link<input readonly value="${esc(location.origin + "/?invite=" + token)}"></label></section>`;
+    if (action === "rename-caregiver") {
+      const person = state.team.find((m) => m.id === b.dataset.id);
+      const name = prompt("Caregiver name", person.name);
+      if (name === null) return;
+      await commit({ type: "caregiver", id: person.id, name });
+      await refresh();
     }
-    if (action === "change-role" || action === "remove-member") {
+    if (action === "remove-caregiver") {
       if (
-        action === "remove-member" &&
         !confirm(
-          "Remove this person’s access? Their assigned tasks will become unassigned.",
+          "Remove this caregiver name? Past records remain; pending tasks become unassigned.",
         )
       )
         return;
-      await api("/api/member", {
-        userId: b.dataset.id,
-        role: action === "remove-member" ? "remove" : b.dataset.role,
-      });
+      await commit({ type: "remove-caregiver", id: b.dataset.id });
       await refresh();
     }
     if (action === "reminders") {
@@ -498,7 +540,7 @@ async function action(action, b) {
       clearInterval(reminderTimer);
       const notified = new Set();
       reminderTimer = setInterval(() => {
-        for (const t of state.tasks.filter(
+        for (const t of (state?.tasks || []).filter(
           (t) => !t.archived && t.status === "todo",
         )) {
           const delta = Date.parse(t.dueAt) - Date.now();
@@ -515,23 +557,27 @@ async function action(action, b) {
     if (action === "reset") {
       if (
         prompt(
-          "This deletes the team’s care plan and records. Type DELETE to continue.",
+          "This deletes setup and all care records in this browser. Type DELETE to continue.",
         ) !== "DELETE"
       )
         return;
-      await api("/api/reset", { version: state.version, confirm: "DELETE" });
+      await commit({ type: "reset", confirm: "DELETE" });
+      clearInterval(reminderTimer);
+      tab = "today";
+      filter = "";
       draft = null;
       preview = null;
       await refresh();
-      toast("Care plan and records deleted.");
+      toast("This browser’s care record was deleted.");
     }
   } catch (e) {
+    if (e.status === 409) await refresh();
     toast(e.message, true);
   }
 }
 document.addEventListener("submit", async (e) => {
   if (
-    !["auth-form", "plan-form", "task-form", "password-form"].includes(
+    !["setup-form", "plan-form", "task-form", "caregiver-form"].includes(
       e.target.getAttribute("id"),
     )
   )
@@ -542,17 +588,35 @@ document.addEventListener("submit", async (e) => {
   const submit = e.target.querySelector('[type="submit"]');
   if (submit) submit.disabled = true;
   try {
-    if (e.target.getAttribute("id") === "password-form") {
-      await api("/api/password", Object.fromEntries(new FormData(e.target)));
-      e.target.reset();
-      toast("Password changed. Your other devices have been signed out.");
-    }
-    if (e.target.getAttribute("id") === "auth-form") {
-      const data = Object.fromEntries(new FormData(e.target));
-      if (invite) data.invite = invite;
-      await api("/api/" + authMode, data);
+    if (e.target.getAttribute("id") === "setup-form") {
+      const data = new FormData(e.target);
+      const profile = {
+        patient: data.get("patient"),
+        startDate: data.get("startDate"),
+        timeZone: data.get("timeZone"),
+        prefs: Object.fromEntries(
+          Object.keys(DEFAULT_PREFS).map((k) => [k, data.get(`pref-${k}`)]),
+        ),
+      };
+      await commit({
+        type: "setup",
+        profile,
+        names: String(data.get("names") || "")
+          .split("\n")
+          .map((s) => s.trim())
+          .filter(Boolean),
+      });
       history.replaceState({}, "", "/");
       await refresh();
+      toast("Bedside setup saved on this device.");
+    }
+    if (e.target.getAttribute("id") === "caregiver-form") {
+      await commit({
+        type: "caregiver",
+        name: new FormData(e.target).get("name"),
+      });
+      await refresh();
+      toast("Caregiver name saved on this device.");
     }
     if (e.target.getAttribute("id") === "plan-form") {
       collectDraft();
@@ -562,7 +626,7 @@ document.addEventListener("submit", async (e) => {
         $("#preview").scrollIntoView();
         return;
       }
-      await api("/api/plan", { plan: draft, version: state.version });
+      await commit({ type: "plan", plan: draft }, draftVersion);
       draft = null;
       preview = null;
       tab = "schedule";
@@ -574,10 +638,13 @@ document.addEventListener("submit", async (e) => {
       data.actualAt = data.actualAt
         ? new Date(data.actualAt).toISOString()
         : null;
-      await api("/api/task", { ...data, version: state.version });
+      await commit(
+        { type: "task", patch: data },
+        Number($("#task-dialog").dataset.version),
+      );
       $("#task-dialog").close();
       await refresh();
-      toast("Care record saved.");
+      toast("Care record saved on this device.");
     }
   } catch (err) {
     toast(err.message, true);
@@ -586,14 +653,20 @@ document.addEventListener("submit", async (e) => {
         $("#task-dialog")?.close();
         await refresh();
         toast(
-          "Another caregiver changed the record. The latest version is loaded. Open the task again to review it before editing.",
+          "This record changed in another tab. The latest version is loaded. Open the task again before editing.",
+          true,
+        );
+      } else if (e.target.getAttribute("id") !== "plan-form") {
+        await refresh();
+        toast(
+          "This record changed in another tab. The latest saved record is loaded; review it before retrying.",
           true,
         );
       } else {
         await refresh(false);
         toast(
           err.message +
-            " Your plan draft is still here. Compare it with the published schedule before retrying.",
+            " Your plan draft is still here. Use Reload saved plan after reviewing the latest schedule.",
           true,
         );
       }
@@ -620,13 +693,15 @@ app.addEventListener("change", async (e) => {
     if (e.target.getAttribute("id") === "backup-upload") {
       const file = e.target.files[0];
       if (!file) return;
-      if (file.size > 2000000) throw new Error("Backup must be under 2 MB.");
+      if (file.size > 5000000) throw new Error("Backup must be under 5 MB.");
       const backup = JSON.parse(await file.text());
       if (
-        !confirm("Replace this team’s plan and care records with this backup?")
+        !confirm(
+          "Replace all bedside setup and care records in this browser with this backup?",
+        )
       )
         return;
-      await api("/api/restore", { backup, version: state.version });
+      await commit({ type: "restore", backup });
       draft = null;
       preview = null;
       await refresh();
@@ -659,36 +734,43 @@ app.addEventListener("input", (e) => {
       row.querySelector('[name^="reviewed-"]').checked = false;
   }
 });
+async function checkForLocalChanges() {
+  try {
+    const fresh = await loadRecord();
+    if (fresh.version === state?.version) return;
+    if (!fresh.profile) {
+      clearInterval(reminderTimer);
+      draft = null;
+      preview = null;
+      $("#task-dialog")?.close();
+      state = fresh;
+      tab = "today";
+      filter = "";
+      draw();
+      toast("The care record was deleted in another tab.");
+      return;
+    }
+    if (
+      busy ||
+      document.querySelector("dialog[open]") ||
+      tab === "plan" ||
+      ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)
+    ) {
+      toast(
+        "The record changed in another tab. Your unsaved work is preserved; reload the saved plan or reopen this task before saving.",
+      );
+      return;
+    }
+    state = fresh;
+    draw();
+  } catch (error) {
+    toast(error.message, true);
+  }
+}
+onRecordChange(checkForLocalChanges);
+window.addEventListener("focus", checkForLocalChanges);
 try {
   await refresh();
-} catch (e) {
-  if (e.status !== 401) toast(e.message, true);
-  auth();
+} catch (error) {
+  storageFailure(error.message);
 }
-setInterval(async () => {
-  if (!state || busy || document.querySelector("dialog[open]")) return;
-  try {
-    const fresh = await api("/api/state");
-    if (fresh.version !== state.version) {
-      if (tab === "plan") {
-        toast(
-          "The shared record changed. Your draft is preserved; review it before publishing.",
-        );
-        return;
-      }
-      state = fresh;
-      if (
-        !["INPUT", "TEXTAREA", "SELECT"].includes(
-          document.activeElement?.tagName,
-        )
-      )
-        draw();
-    }
-  } catch (e) {
-    if (e.status === 401 || e.status === 403) {
-      state = null;
-      draw();
-      toast(e.message, true);
-    }
-  }
-}, 5000);
