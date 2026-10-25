@@ -586,21 +586,21 @@ function renderHome() {
 }
 
 const medicineColors = [
-  "#447af2",
-  "#17a6bd",
-  "#22996e",
-  "#d99b20",
-  "#9865d1",
-  "#d16788",
-  "#6456c5",
-  "#bd632e",
-  "#6c8c24",
-  "#ab438c",
-  "#337a90",
-  "#946c45",
-  "#4454a4",
-  "#88642d",
-  "#9b4d5c",
+  "#168dcc",
+  "#2c79af",
+  "#4f9bd3",
+  "#e77c6b",
+  "#79b5e3",
+  "#c66b63",
+  "#266597",
+  "#ed9c8c",
+  "#367da8",
+  "#bb655c",
+  "#5594ba",
+  "#d88679",
+  "#224f79",
+  "#e9ad9f",
+  "#73b8d8",
 ];
 function renderSchedule() {
   const host = $("#scheduleBody");
@@ -643,19 +643,19 @@ function renderSchedule() {
       kind: "weight",
       label: "Weight check",
       detail: "Daily care",
-      color: "#397f8f",
+      color: "#487ca5",
     },
     {
       kind: "symptom",
       label: "Symptom check",
       detail: "Daily care",
-      color: "#8c66c7",
+      color: "#68b2ef",
     },
     {
       kind: "visit",
       label: "Follow-ups",
       detail: "Appointment",
-      color: "#b4713f",
+      color: "#da897c",
     },
   ])
     if (tasks.some((task) => task.kind === group.kind)) groups.push(group);
@@ -694,7 +694,7 @@ function renderSchedule() {
       return `<button class="medicine-box ${conflict ? "has-conflict" : ""} ${esc(task.status)}" data-chart-task="${esc(task.id)}" data-kind="${esc(task.kind)}" data-minute="${toMin(time)}" data-lane="${lane}" style="--medicine-color:${group.color}" aria-label="${esc(title)} ${esc(time)} ${label}${conflict ? ", timing conflict" : ""}"><b ${task.kind === "med" || task.kind === "visit" ? "data-no-translate" : ""}>${esc(title)}</b><span ${task.kind === "med" ? "data-no-translate" : ""}>${esc(group.detail)}</span><span class="medicine-box-status">${esc(time)} · ${label}</span>${actual ? `<small>Target ${esc(task.time)}${localISO(new Date(task.doneAt)) !== date ? " · recorded " + esc(localISO(new Date(task.doneAt))) : ""}</small>` : ""}${conflict ? '<small class="box-conflict">Timing conflict</small>' : ""}</button>`;
     })
     .join("");
-  host.innerHTML = `<div class="schedule-toolbar"><label>Day <select id="scheduleDate">${(dates.length ? dates : [date]).map((day) => `<option ${day === date ? "selected" : ""}>${esc(day)}</option>`).join("")}</select></label><span class="small">${dayMeds.length} medicines · ${doseCount} doses${tasks.length > doseCount ? ` · ${tasks.length - doseCount} care events` : ""}</span></div>
+  host.innerHTML = `<div class="schedule-toolbar"><label>Day <select id="scheduleDate">${(dates.length ? dates : [date]).map((day) => `<option ${day === date ? "selected" : ""}>${esc(day)}</option>`).join("")}</select></label><span class="small">${dayMeds.length} medicines · ${doseCount} doses${tasks.length > doseCount ? ` · ${tasks.length - doseCount} care event${tasks.length - doseCount === 1 ? "" : "s"}` : ""}</span></div>
     <div class="medicine-legend">${groups.map((group) => `<span ${group.kind === "med" ? "data-no-translate" : ""}><i style="background:${group.color}"></i>${esc(group.label)}</span>`).join("")}</div>
     <div class="timeline-scroll"><div class="medicine-timeline" data-date="${esc(date)}" style="--lanes:${Math.max(1, groups.length)}" role="group" aria-label="Daily care timeline">${Array.from({ length: 13 }, (_, i) => `<div class="medicine-hour" style="left:${(i / 12) * 100}%"><span>${String(i * 2).padStart(2, "0")}:00</span></div>`).join("")}${pins}<div class="current-time-line" hidden><span></span></div></div></div>
     <p class="small chart-caption">Completed items appear at their recorded time. Click a box to record or edit.</p>
