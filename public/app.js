@@ -1,4 +1,9 @@
-import { autoResolve, checkTimes, DEFAULT_MEALS } from "/scheduler.js";
+import {
+  autoResolve,
+  checkTimes,
+  DEFAULT_MEALS,
+  FREQUENCIES,
+} from "/scheduler.js";
 import { parseInstructions } from "/instructions.js";
 import {
   generatePlanTasks,
@@ -56,6 +61,10 @@ let S = emptyRecord();
    1. COMPILER — constraint placement, hand-written
    ======================================================================= */
 
+const toMin = (hhmm) => {
+  const p = hhmm.split(":");
+  return Number(p[0]) * 60 + Number(p[1]);
+};
 function compileSchedule(meds, requested = {}) {
   return autoResolve(meds, S.meals || DEFAULT_MEALS, requested);
 }
@@ -82,7 +91,7 @@ function generateTasks(state, days = 30) {
    2. RUNTIME CHECKS — against what actually happened
    ======================================================================= */
 
-function findLogViolations(state) {
+function findLogViolations(state, windowMin = 180) {
   const out = [];
   const done = state.tasks.filter(
     (t) => t.kind === "med" && t.status === "done" && t.doneAt,
@@ -138,7 +147,7 @@ function findLogViolations(state) {
   return out;
 }
 
-function findMissed(state, graceMin = 60) {
+function findMissed(state, nowMin, graceMin = 60) {
   const today = localISO(new Date());
   return state.tasks
     .filter((t) => t.kind === "med" && t.status === "todo" && t.date === today)
@@ -164,23 +173,45 @@ function findMissed(state, graceMin = 60) {
 }
 
 function computeLoad(state) {
-  const groups = state.team.map((person) => ({
-    name: person.name + (person.archived ? " (removed)" : ""),
-    rel: person.rel,
-    tasks: state.tasks.filter((task) => task.who === person.id),
-  }));
-  const unassigned = state.tasks.filter(
-    (task) => !state.team.some((person) => person.id === task.who),
+  const by = {};
+  state.team.forEach(
+    (m) =>
+      (by[m.id] = {
+        name: m.name + (m.archived ? " (removed)" : ""),
+        rel: m.rel,
+        total: 0,
+        done: 0,
+        days: new Set(),
+      }),
   );
-  if (unassigned.length)
-    groups.push({ name: "Unassigned", rel: "—", tasks: unassigned });
-  return groups.map((group) => ({
-    ...group,
-    total: group.tasks.length,
-    done: group.tasks.filter((task) => task.status === "done").length,
-    pending: group.tasks.filter((task) => task.status === "todo").length,
-    skipped: group.tasks.filter((task) => task.status === "skip").length,
+  let un = 0;
+  state.tasks.forEach((t) => {
+    const k = by[t.who];
+    if (!k) {
+      un++;
+      return;
+    }
+    k.total++;
+    if (t.status === "done") {
+      k.done++;
+      k.days.add(t.date);
+    }
+  });
+  const rows = Object.values(by).map((v) => ({
+    ...v,
+    rate: v.total ? Math.round((v.done / v.total) * 100) : 0,
+    activeDays: v.days.size,
   }));
+  if (un)
+    rows.push({
+      name: "Unassigned",
+      rel: "—",
+      total: un,
+      done: 0,
+      rate: 0,
+      activeDays: 0,
+    });
+  return rows;
 }
 
 /* =======================================================================
@@ -262,6 +293,16 @@ function parseLocal(text) {
 
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => Array.from(document.querySelectorAll(s));
+const tableObserver = new ResizeObserver((entries) => {
+  entries.forEach((entry) => {
+    if (!entry.target.isConnected) {
+      tableObserver.unobserve(entry.target);
+      return;
+    }
+    updateTableScroll(entry.target.closest(".table-scroll"));
+  });
+});
+
 function notify(message, error = false) {
   const status = $("#saveStatus");
   status.textContent = message;
@@ -412,61 +453,7 @@ function renderAll() {
   scrollTables();
 }
 
-function taskRows(tasks, { assignments = false } = {}) {
-  return tasks
-    .map((t) => {
-      const who = S.team.find((p) => p.id === t.who);
-      const future = t.date > localISO(new Date());
-      const pending = t.status === "todo";
-      return `<article class="task-row" data-task="${esc(t.id)}">
-      <div class="task-time">${esc(t.time)}</div>
-      <div class="task-description"><h3>${esc(t.label)}</h3>
-        <p>${t.kind === "visit" ? "Booking deadline · " : ""}${esc(who?.name || "Unassigned")}${t.doneAt != null ? ` · Recorded ${esc(new Date(t.doneAt).toLocaleString())}${t.recordedByName ? " by " + esc(t.recordedByName) : ""}` : ""}</p>
-        ${
-          assignments
-            ? `<label class="assignment">Assigned to<select aria-label="Assign ${esc(t.label)} at ${esc(t.time)}" data-who="${esc(t.id)}"><option value="">Unassigned</option>${S.team
-                .filter((p) => !p.archived || p.id === t.who)
-                .map(
-                  (p) =>
-                    `<option value="${esc(p.id)}" ${p.id === t.who ? "selected" : ""}>${esc(p.name)}${p.archived ? " (removed)" : ""}</option>`,
-                )
-                .join("")}</select></label>`
-            : ""
-        }
-      </div>
-      <div class="task-actions"><span class="pill ${esc(t.status)}">${pending ? "Pending" : t.status === "done" ? "Completed" : "Skipped"}</span>
-        ${future ? '<span class="small">Available on this date</span>' : `<button class="mini" ${pending ? "data-done" : "data-edit"}="${esc(t.id)}">${pending ? (t.kind === "med" ? "Record dose" : "Record task") : "Edit record"}</button>${pending ? `<button class="mini" data-skip="${esc(t.id)}">Skip</button>` : ""}`}
-      </div></article>`;
-    })
-    .join("");
-}
-function wireTaskRows(host) {
-  host
-    .querySelectorAll("[data-done],[data-edit],[data-skip]")
-    .forEach((button) => {
-      button.onclick = () =>
-        openTask(
-          button.dataset.done || button.dataset.edit || button.dataset.skip,
-          button.hasAttribute("data-skip")
-            ? "skip"
-            : button.hasAttribute("data-done")
-              ? "done"
-              : null,
-        );
-    });
-  host.querySelectorAll("[data-who]").forEach((select) => {
-    select.onchange = async () => {
-      const candidate = structuredClone(S);
-      const task = candidate.tasks.find((t) => t.id === select.dataset.who);
-      if (!task) return;
-      task.who = select.value;
-      await save(candidate);
-      renderAll();
-    };
-  });
-}
 function renderHome() {
-  const completedOpen = $(".completed-tasks")?.open || false;
   const warnings = $("#patientWarnings");
   warnings.hidden = !S.patient || !S.flags.length;
   warnings.innerHTML = S.flags.length
@@ -474,121 +461,105 @@ function renderHome() {
       S.flags.map((flag) => `<div>${esc(flag)}</div>`).join("")
     : "";
   $("#hdrPat").textContent = S.patient
-    ? `${S.patient.name} · discharged ${S.patient.dischargeDate}`
+    ? `${S.patient.name} · ${S.patient.age} · discharged ${S.patient.dischargeDate}`
     : "";
-  $("#todayTasks").innerHTML = "";
-  $("#homeAlerts").innerHTML = "";
-  $("#nextCard").style.display = "none";
   if (!S.patient) {
-    $("#homeSub").textContent = "A clear next step for care at home.";
-    $("#homeStats").innerHTML =
-      `<div class="empty-state"><div class="eyebrow">Welcome to CareLoop</div><h3>From discharge instructions to a daily routine.</h3><p>Add the instructions, check the details, and review your care plan. Then record what happened, one task at a time.</p><div class="task-actions"><button class="act" id="btnEmptyImport">Add instructions</button><button class="ghost" id="btnEmptySample">Try a sample family</button></div><p class="small">The sample is fictional. Your records stay in this browser.</p></div>`;
-    $("#btnEmptySample").onclick = async () => {
-      if (await seed()) renderAll();
-    };
-    $("#btnEmptyImport").onclick = () => navigate("import");
+    $("#homeSub").textContent = "No plan loaded yet.";
+    $("#homeStats").innerHTML = `
+      <div class="card hd" style="grid-column:1/-1;margin:0">
+        <h3 style="margin:0 0 4px;font-size:15px;color:var(--navy)">Start with a discharge summary</h3>
+        <p style="margin:0 0 12px;color:var(--muted);font-size:13.5px">
+          Paste one, or open a sample, and CareLoop turns the timing rules buried in the sentences into a 30-day schedule.</p>
+        <ol style="margin:0 0 14px 18px;padding:0;font-size:13.5px;line-height:1.8">
+          <li><b>Read</b> — paste the English summary, or load the sample.</li>
+          <li><b>Review</b> — every extracted field is editable before anything is scheduled.</li>
+          <li><b>Compile</b> — doses are placed so the gap and meal rules hold together.</li>
+          <li><b>Keep the record</b> — tick off what was given; the log is checked against the rules.</li>
+        </ol>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <button class="act" id="btnEmptySample">Load sample family</button>
+          <button class="ghost" id="btnEmptyImport">Read a summary</button>
+        </div>
+      </div>`;
+    $("#homeAlerts").innerHTML = "";
+    $("#nextCard").style.display = "none";
+    const bs = $("#btnEmptySample"),
+      bi = $("#btnEmptyImport");
+    if (bs)
+      bs.onclick = async () => {
+        if (await seed()) renderAll();
+      };
+    if (bi)
+      bi.onclick = () => {
+        document.querySelector('button[data-t="import"]').click();
+      };
     return;
   }
   const today = localISO(new Date());
-  const tasks = S.tasks
-    .filter((t) => t.date === today)
-    .sort((a, b) => a.time.localeCompare(b.time));
-  const pending = tasks.filter((t) => t.status === "todo");
-  const finished = tasks.filter((t) => t.status !== "todo");
-  const next = pending[0];
-  $("#homeSub").textContent = new Date().toLocaleDateString(undefined, {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-  });
-  $("#homeStats").innerHTML = tasks.length
-    ? `<span><b>${finished.filter((t) => t.status === "done").length} of ${tasks.length}</b> completed</span><span>${pending.length} pending · ${finished.filter((t) => t.status === "skip").length} skipped</span>`
-    : "";
-  const missed = findMissed(S);
+  const day = today;
+  const tt = S.tasks.filter((t) => t.date === day);
+  const done = tt.filter((t) => t.status === "done").length;
+  const pct = tt.length ? Math.round((done / tt.length) * 100) : 0;
+  const next = tt.find((t) => t.status === "todo");
+
   const logV = findLogViolations(S);
-  const unassigned = pending.filter(
-    (t) => !S.team.some((p) => p.id === t.who && !p.archived),
-  );
-  let alerts = (S.schedule?.violations || [])
-    .map(
-      (v) =>
-        `<div class="banner"><b>Review the schedule</b><div>${esc(v.msg)}</div></div>`,
-    )
-    .join("");
-  alerts += logV
-    .map(
-      (v) =>
-        `<div class="banner"><b>Check a recorded time</b><div>${esc(v.msg)}</div></div>`,
-    )
-    .join("");
+  const now = new Date(),
+    nowMin = now.getHours() * 60 + now.getMinutes();
+  const missed = findMissed(S, nowMin);
+
+  $("#homeSub").textContent =
+    `${tt.length} doses and checks on ${day} · ${S.tasks.length} in the 30-day plan`;
+  $("#homeStats").innerHTML = `
+    <div class="stat"><div class="k">Today</div><div class="v">${done}<small>/${tt.length} done</small></div></div>
+    <div class="stat"><div class="k">Adherence</div><div class="v">${pct}<small>%</small></div></div>
+    <div class="stat"><div class="k">Rule breaks</div><div class="v" style="color:${logV.length ? "#b3261e" : "#1b7f4b"}">${logV.length}</div></div>
+    <div class="stat"><div class="k">Past due</div><div class="v" style="color:${missed.length ? "#9a5b00" : "#1b7f4b"}">${missed.length}</div></div>`;
+
+  let a = "";
+  if (S.schedule?.violations?.length)
+    a += S.schedule.violations
+      .map(
+        (v) =>
+          `<div class="banner"><b>Schedule cannot satisfy the rules</b> — ${esc(v.msg)}</div>`,
+      )
+      .join("");
+  if (logV.length)
+    a += logV
+      .slice(0, 2)
+      .map(
+        (v) =>
+          `<div class="banner"><b>Record breaks a timing rule</b> — ${esc(v.msg)}</div>`,
+      )
+      .join("");
   if (missed.length)
-    alerts += `<div class="banner amber"><b>${missed.length} medication task${missed.length === 1 ? " is" : "s are"} past the scheduled time</b><div>Check what happened and record the actual time. For missed-dose advice, contact your care team.</div></div>`;
-  if (unassigned.length)
-    alerts += `<div class="banner amber"><b>${unassigned.length} pending task${unassigned.length === 1 ? " needs" : "s need"} a caregiver</b><button class="text-button" id="reviewAssignments">Review assignments</button></div>`;
-  $("#homeAlerts").innerHTML = alerts
-    ? `<h3 class="section-title">Needs attention</h3>${alerts}`
-    : "";
-  if ($("#reviewAssignments"))
-    $("#reviewAssignments").onclick = () => navigate("tasks");
+    a += missed
+      .slice(0, 2)
+      .map(
+        (m) =>
+          `<div class="banner amber"><b>Dose still open</b> — ${esc(m.msg)}</div>`,
+      )
+      .join("");
+  if (!a)
+    a =
+      '<div class="banner green"><b>No timing alerts in the recorded doses.</b></div>';
+  $("#homeAlerts").innerHTML = a;
+
   if (next) {
     $("#nextCard").style.display = "block";
-    $("#nextHeading").textContent = "Next pending task · " + next.time;
-    $("#nextTitle").textContent = next.label;
-    const who = S.team.find((p) => p.id === next.who);
+    $("#nextTitle").textContent = `${next.time} · ${next.label}`;
+    const who = S.team.find((m) => m.id === next.who);
     $("#nextWho").textContent = who
-      ? `Assigned to ${who.name}${who.rel ? " · " + who.rel : ""}`
-      : "No caregiver assigned";
-    $("#btnNextDone").textContent =
-      next.kind === "med" ? "Record dose" : "Record task";
+      ? `Assigned to ${who.name} (${who.rel})`
+      : "Unassigned";
     $("#btnNextDone").onclick = () => openTask(next.id, "done");
     $("#btnNextSkip").onclick = () => openTask(next.id, "skip");
-  }
-  $("#todayTasks").innerHTML = tasks.length
-    ? `${pending.length > 1 ? `<h3 class="section-title">Also today <span>${pending.length - 1}</span></h3><div class="task-list">${taskRows(pending.slice(1))}</div>` : ""}${!pending.length ? '<div class="quiet-state"><h3>Today’s tasks are recorded.</h3><p>You can review or correct an entry below.</p></div>' : ""}${finished.length ? `<details class="completed-tasks" ${completedOpen ? "open" : ""}><summary>Recorded today · ${finished.length}</summary><div class="task-list">${taskRows(finished)}</div></details>` : ""}`
-    : '<div class="quiet-state"><h3>No tasks planned for today.</h3><p>Open the 30-Day Plan to review the dates covered by your plan.</p><button class="ghost" id="openPlanDates">View 30-Day Plan</button></div>';
-  if ($("#openPlanDates"))
-    $("#openPlanDates").onclick = () => navigate("tasks");
-  wireTaskRows($("#todayTasks"));
-}
-
-function scheduleGroups(state, date) {
-  const groups = new Map();
-  state.tasks
-    .filter((t) => t.kind === "med" && t.date === date)
-    .sort((a, b) => a.time.localeCompare(b.time))
-    .forEach((t) => {
-      if (!groups.has(t.time)) groups.set(t.time, []);
-      groups.get(t.time).push(t);
-    });
-  return `<div class="schedule-groups">${
-    [...groups]
-      .map(
-        ([time, tasks]) =>
-          `<section class="schedule-group"><h3>${esc(time)}</h3><div>${tasks
-            .map((t) => {
-              const med = state.meds.find((m) => m.id === t.medId);
-              const rules = [
-                med?.meal && med.meal !== "any"
-                  ? `${med.meal} ${med.mealTarget && med.mealTarget !== "any" ? med.mealTarget : "food"}`
-                  : "",
-                med?.gapH
-                  ? `At least ${med.gapH} hours from ${med.gapTarget || "other medicines"}`
-                  : "",
-              ].filter(Boolean);
-              return `<div class="scheduled-med"><h4>${esc(med?.drug || t.label)} <span>${esc(med?.dose || "")}</span></h4><p>${esc(rules.join(" · ") || med?.freq || "")}</p></div>`;
-            })
-            .join("")}</div></section>`,
-      )
-      .join("") ||
-    '<p class="sub">No medications on this date. Checks and booking deadlines are in the 30-Day Plan.</p>'
-  }</div>`;
+  } else $("#nextCard").style.display = "none";
 }
 
 function renderSchedule() {
   const host = $("#scheduleBody");
   if (!S.meds.length || !S.schedule) {
-    host.innerHTML =
-      '<span class="small">Add instructions to build a care plan first.</span>';
+    host.innerHTML = '<span class="small">Compile a plan first.</span>';
     return;
   }
   const bad = S.schedule.bad || {};
@@ -611,6 +582,19 @@ function renderSchedule() {
     ]),
   );
 
+  const pins = [];
+  Object.entries(displayTimes).forEach(([medId, ts]) => {
+    ts.forEach((t) => {
+      const left = ((toMin(t) / 1440) * 100).toFixed(2);
+      pins.push(`<div class="pin ${bad[medId] ? "bad" : ""}" style="left:${left}%">
+        <div class="dot"></div><div class="lb">${t}</div></div>`);
+    });
+  });
+  let lbl = "";
+  [0, 6, 12, 18, 24].forEach((h) => {
+    lbl += `<div class="hourlbl" style="left:${((h / 24) * 100).toFixed(2)}%">${String(h).padStart(2, "0")}</div>`;
+  });
+
   const rows = S.meds
     .map((m) => {
       const ts = (displayTimes[m.id] || []).join(", ") || "—";
@@ -625,22 +609,22 @@ function renderSchedule() {
 
   const viol = S.schedule.violations || [];
   host.innerHTML = `
-    ${scheduleGroups(S, scheduleDate)}
+    <div class="timeline-scroll"><div class="tl">${lbl}${pins.join("")}</div></div>
     <div class="small" style="margin:8px 0 12px">
       Schedule for ${esc(scheduleDate)}.
-      ${viol.length ? "Review the timing alerts below." : "Times checked against the supported instructions."}</div>
+      ${viol.length ? '<b style="color:#b3261e">Red pins break a rule.</b>' : "Supported rules satisfied."}</div>
     ${resolutionHTML(S.schedule)}
-    <details class="timing-details">
-      <summary>View timing details</summary>
+    <div class="card">
+      <h2 style="font-size:15px">Rules the compiler had to honour</h2>
       <table><thead><tr><th>Drug</th><th style="width:130px">How often</th><th style="width:110px">Meal</th>
-      <th style="width:140px">Spacing</th><th style="width:150px">Scheduled time</th></tr></thead>
+      <th style="width:140px">Spacing</th><th style="width:150px">Compiled time</th></tr></thead>
       <tbody>${rows}</tbody></table>
-    </details>
+    </div>
     <div class="card hd">
-      <div class="small">Recheck this saved plan while keeping the entered doses and timing rules.</div>
+      <div class="small">Automatic resolution preserves the entered doses and timing rules.</div>
       <div style="margin-top:9px">
-        <button class="act" id="btnRecompile">Check and adjust times</button>
-        <details class="example-tools"><summary>Try a timing example</summary><p class="small">A demonstration only. Your saved plan will not change.</p><button class="ghost" id="btnTestMove">Try a conflict example</button></details>
+        <button class="act" id="btnRecompile">Auto-resolve schedule</button>
+        <button class="ghost" id="btnTestMove" style="margin-left:6px">Try a conflict example</button>
       </div>
       <div class="small" id="recompMsg" style="margin-top:8px"></div>
     </div>`;
@@ -694,7 +678,7 @@ function renderTasks() {
   const host = $("#taskList"),
     sub = $("#taskSub");
   if (!S.tasks.length) {
-    sub.textContent = "Add instructions to build a care plan first.";
+    sub.textContent = "Compile a plan first.";
     host.innerHTML = "";
     $("#conflictBox").innerHTML = "";
     $("#dayFilter").innerHTML = "";
@@ -702,12 +686,7 @@ function renderTasks() {
   }
   const dates = [...new Set(S.tasks.map((t) => t.date))].sort();
   const sel = $("#dayFilter");
-  const cur =
-    sel.value && dates.includes(sel.value)
-      ? sel.value
-      : dates.includes(localISO(new Date()))
-        ? localISO(new Date())
-        : dates[0];
+  const cur = sel.value && dates.includes(sel.value) ? sel.value : dates[0];
   sub.textContent = `${S.tasks.length} doses and checks over ${dates.length} days`;
 
   const v = findLogViolations(S);
@@ -731,18 +710,53 @@ function renderTasks() {
           `<option value="${d}" ${list.includes(d) ? "selected" : ""}>${d}</option>`,
       )
       .join("");
-    host.innerHTML = list
-      .map(
-        (date) =>
-          `<section class="plan-day"><h3 class="section-title">${esc(new Date(date + "T12:00:00").toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" }))}</h3><div class="task-list">${taskRows(
-            S.tasks
-              .filter((t) => t.date === date)
-              .sort((a, b) => a.time.localeCompare(b.time)),
-            { assignments: true },
-          )}</div></section>`,
-      )
-      .join("");
-    wireTaskRows(host);
+    const rows = S.tasks.filter((t) => list.includes(t.date));
+    host.innerHTML = `<div class="table-scroll"><table><thead><tr><th style="width:56px">Time</th><th>Task</th>
+      <th style="width:138px">Assigned</th><th style="width:88px">Status</th><th style="width:138px">Action</th></tr></thead>
+      <tbody>${rows
+        .map((t) => {
+          const bad = v.some((x) => x.a?.id === t.id || x.b?.id === t.id);
+          return `<tr class="${bad ? "conflict" : ""}">
+          <td class="mono">${t.time}</td>
+          <td>${esc(t.label)}${t.doneAt != null ? `<div class="small">Recorded ${esc(new Date(t.doneAt).toLocaleString())}${t.recordedByName ? " · " + esc(t.recordedByName) : ""}</div>` : ""}${t.kind === "visit" ? ' <span class="small">(appointment)</span>' : ""}</td>
+          <td><select data-who="${esc(t.id)}"><option value="" ${!t.who ? "selected" : ""}>Unassigned</option>${S.team
+            .filter((person) => !person.archived || person.id === t.who)
+            .map(
+              (m) =>
+                `<option value="${esc(m.id)}" ${m.id === t.who ? "selected" : ""}>${esc(m.name)}${m.archived ? " (removed)" : ""}</option>`,
+            )
+            .join("")}</select></td>
+          <td><span class="pill ${esc(t.status)}">${esc(t.status)}</span></td>
+          <td><button class="mini ${t.status === "done" ? "done" : ""}" ${t.status === "todo" ? "data-done" : "data-edit"}="${esc(t.id)}">${t.status === "todo" ? "Record" : "Edit record"}</button>
+              ${t.status === "todo" ? `<button class="mini" data-skip="${esc(t.id)}">Skip</button>` : ""}</td></tr>`;
+        })
+        .join("")}</tbody></table></div>`;
+
+    host
+      .querySelectorAll("[data-done],[data-edit],[data-skip]")
+      .forEach(
+        (button) =>
+          (button.onclick = () =>
+            openTask(
+              button.dataset.done || button.dataset.edit || button.dataset.skip,
+              button.hasAttribute("data-skip")
+                ? "skip"
+                : button.hasAttribute("data-done")
+                  ? "done"
+                  : null,
+            )),
+      );
+    host.querySelectorAll("[data-who]").forEach(
+      (select) =>
+        (select.onchange = async () => {
+          const candidate = structuredClone(S),
+            task = candidate.tasks.find((t) => t.id === select.dataset.who);
+          if (!task) return;
+          task.who = select.value;
+          if (await save(candidate)) renderAll();
+          else renderAll();
+        }),
+    );
   }
 }
 
@@ -756,53 +770,48 @@ function renderTeam() {
     .join("");
   const box = $("#teamCard");
   if (!S.tasks.length) {
-    box.innerHTML =
-      '<span class="small">Add instructions to build a care plan first.</span>';
+    box.innerHTML = '<span class="small">Compile a plan first.</span>';
     return;
   }
   const load = computeLoad(S);
-  box.innerHTML = `<div class="team-overview">${load.map((l) => `<article class="team-person"><div><h3>${esc(l.name)}</h3><p>${esc(l.rel === "—" ? "Choose a caregiver in the 30-Day Plan" : l.rel)}</p></div><div><b>${l.pending}</b> pending<span>${l.done} completed · ${l.skipped} skipped</span></div></article>`).join("")}</div>`;
+  const max = Math.max(...load.map((l) => l.total), 1);
+  box.innerHTML = `<table><thead><tr><th>Caregiver</th><th style="width:180px">Load</th>
+    <th style="width:66px">Tasks</th><th style="width:66px">Done</th>
+    <th style="width:78px">Rate</th><th style="width:96px">Active days</th></tr></thead>
+    <tbody>${load
+      .map(
+        (l) => `<tr>
+      <td><b>${esc(l.name)}</b><div class="small">${esc(l.rel)}</div></td>
+      <td><div class="barwrap"><div class="bar" style="width:${Math.round((l.total / max) * 140)}px"></div>
+          <span class="small">${l.total}</span></div></td>
+      <td>${l.total}</td><td>${l.done}</td><td>${l.rate}%</td><td>${l.activeDays}</td>
+    </tr>`,
+      )
+      .join("")}</tbody></table>`;
 }
 
 /* =======================================================================
    5. WIRING
    ======================================================================= */
 
-function navigate(id) {
-  const button = document.querySelector(`nav [data-t="${id}"]`);
-  $$("nav button").forEach((b) => {
-    b.classList.toggle("on", b === button);
-    if (b === button) b.setAttribute("aria-current", "page");
-    else b.removeAttribute("aria-current");
-  });
-  $$(".panel").forEach((p) => p.classList.toggle("on", p.id === "p-" + id));
-  $("#moreNav").open = false;
-  $("#moreNav").classList.toggle(
-    "active",
-    ["import", "tasks", "about"].includes(id),
-  );
-  $("#moreCurrent").textContent = ["import", "tasks", "about"].includes(id)
-    ? " · " + button.textContent
-    : "";
-  if (id === "import" && S.patient && !draftLoaded) openSavedPlan(false);
-  if (id === "home") renderHome();
-  if (id === "schedule") renderSchedule();
-  scrollTables();
-  const heading = $("#p-" + id + " h2");
-  heading.tabIndex = -1;
-  heading.focus({ preventScroll: true });
-  window.scrollTo(0, 0);
-}
-$$("nav button").forEach((b) => (b.onclick = () => navigate(b.dataset.t)));
-document.addEventListener("click", (event) => {
-  if (!event.target.closest("#moreNav")) $("#moreNav").open = false;
-});
-document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && $("#moreNav").open) {
-    $("#moreNav").open = false;
-    $("#moreNav summary").focus();
-  }
-});
+$$("nav button").forEach(
+  (b) =>
+    (b.onclick = () => {
+      $$("nav button").forEach((x) => x.classList.remove("on"));
+      $$(".panel").forEach((p) => p.classList.remove("on"));
+      b.classList.add("on");
+      $$("nav button").forEach((x) => x.removeAttribute("aria-current"));
+      b.setAttribute("aria-current", "page");
+      $("#p-" + b.dataset.t).classList.add("on");
+      if (b.dataset.t === "import" && S.patient && !draftLoaded)
+        openSavedPlan(false);
+      if (b.dataset.t === "home") renderHome();
+      if (b.dataset.t === "schedule") {
+        renderSchedule();
+        scrollTables();
+      }
+    }),
+);
 
 $("#btnDemo").onclick = () => {
   $("#rawText").value = SAMPLE_TEXT;
@@ -902,20 +911,6 @@ function addMedRow(m = {}) {
     <td><input type="text" class="mTarget" value="${esc(m.gapTarget || "")}" placeholder="All other medicines"></td>
     <td><input type="number" class="mGap" value="${esc(m.gapH ?? "")}" placeholder="—" min="0" step="1"></td>
     <td><button class="mini remove-row" type="button" aria-label="Remove row">×</button></td>`;
-  const labels = [
-    "Medication",
-    "Dose",
-    "How often",
-    "Meal",
-    "Separate from",
-    "Gap (hours)",
-    "Remove",
-  ];
-  [...tr.cells].forEach((cell, index) => {
-    cell.dataset.label = labels[index];
-    const field = cell.querySelector("input,select");
-    if (field) field.setAttribute("aria-label", labels[index]);
-  });
   $("#medTable tbody").appendChild(tr);
 }
 document.addEventListener("click", (event) => {
@@ -933,11 +928,6 @@ function addFuRow(f = {}) {
     <td><input type="text" class="fWho" value="${esc(f.who || "")}" placeholder="Cardiology"></td>
     <td><input type="number" class="fDays" min="0" max="365" value="${esc(f.days ?? 7)}"></td>
     <td><button class="mini remove-row" type="button" aria-label="Remove row">×</button></td>`;
-  tr.querySelector(".fWho").setAttribute("aria-label", "Follow-up provider");
-  tr.querySelector(".fDays").setAttribute(
-    "aria-label",
-    "Booking deadline in days",
-  );
   $("#fuTable tbody").appendChild(tr);
 }
 $("#btnAddFu").onclick = () => addFuRow();
@@ -1054,29 +1044,15 @@ $("#btnGenerate").onclick = async () => {
     $("#genStatus").textContent = error.message;
     return;
   }
-  const token = draftToken;
-  const dialog = document.createElement("dialog");
-  dialog.id = "plan-preview";
-  dialog.setAttribute("aria-labelledby", "preview-title");
-  dialog.innerHTML = `<h2 id="preview-title">Check your care plan</h2><p class="sub">${esc(candidate.patient.name)} · 30 days from ${esc(date)}. Review these times against the written instructions before saving.</p>${scheduleGroups(candidate, date)}${resolutionHTML(resolved)}<p class="small">${candidate.tasks.length} medication tasks, checks, and booking deadlines. ${S.patient ? "Your recorded history will be kept." : "Nothing has been saved yet."}</p><p id="preview-error" role="alert"></p><div class="dialog-actions"><button class="act" id="btnSavePlan">Save care plan</button><button class="ghost" id="btnBackToReview">Back to details</button></div>`;
-  document.body.append(dialog);
-  dialog.addEventListener("close", () => dialog.remove());
-  $("#btnBackToReview").onclick = () => dialog.close();
-  $("#btnSavePlan").onclick = async () => {
-    if (busy) return;
-    if (!(await save(candidate, token))) {
-      $("#preview-error").textContent = $("#saveStatus").textContent;
-      return;
-    }
-    draftToken = lastToken;
-    draftDirty = false;
-    $("#genStatus").textContent = "";
-    dialog.close();
-    renderAll();
-    navigate("schedule");
-    notify("Care plan saved. Open Today to record care.");
-  };
-  dialog.showModal();
+  if (!(await save(candidate, draftToken))) {
+    $("#genStatus").textContent = $("#saveStatus").textContent;
+    return;
+  }
+  draftToken = lastToken;
+  draftDirty = false;
+  $("#genStatus").textContent = "";
+  renderAll();
+  document.querySelector('nav button[data-t="schedule"]').click();
 };
 
 $("#btnSeed").onclick = async () => {
@@ -1249,7 +1225,7 @@ function openTask(id, intent = null) {
         ).length
       )
         throw new Error(
-          "The saved timetable needs review. Open Plan and choose Check and adjust times before recording; existing records have not changed.",
+          "The saved timetable needs review. Auto-resolve the saved plan before recording; existing records have not changed.",
         );
       const candidate = recordTask(S, {
         id,
@@ -1286,16 +1262,46 @@ if (S.patient && S.tasks.length) {
 if (location.protocol !== "file:" && "serviceWorker" in navigator)
   navigator.serviceWorker.register("/sw.js").catch(() => {});
 
+function updateTableScroll(scroll) {
+  if (
+    !scroll?.isConnected ||
+    !scroll.previousElementSibling?.classList.contains("table-hint")
+  )
+    return;
+  const overflowing = scroll.scrollWidth > scroll.clientWidth + 1;
+  scroll.classList.toggle("is-overflowing", overflowing);
+  scroll.previousElementSibling.hidden = !overflowing;
+  if (overflowing) scroll.setAttribute("tabindex", "0");
+  else scroll.removeAttribute("tabindex");
+}
 function scrollTables() {
   for (const table of document.querySelectorAll("table")) {
-    if (!table.closest(".table-scroll")) {
-      const scroll = document.createElement("div");
+    let scroll = table.closest(".table-scroll");
+    if (!scroll) {
+      scroll = document.createElement("div");
       scroll.className = "table-scroll";
       table.before(scroll);
       scroll.append(table);
     }
+    if (!scroll.previousElementSibling?.classList.contains("table-hint")) {
+      const hint = document.createElement("p");
+      hint.className = "table-hint";
+      hint.textContent = "Swipe across the table to see all columns →";
+      hint.hidden = true;
+      scroll.before(hint);
+      scroll.setAttribute("role", "region");
+      scroll.setAttribute(
+        "aria-label",
+        (table.closest(".panel")?.querySelector("h2")?.textContent || "Care") +
+          " table, scroll for more columns",
+      );
+      tableObserver.observe(scroll);
+      tableObserver.observe(table);
+    }
+    updateTableScroll(scroll);
   }
 }
+
 scrollTables();
 
 let lastDisplayedDate = localISO(new Date());

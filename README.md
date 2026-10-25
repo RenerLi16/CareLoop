@@ -1,6 +1,6 @@
 # CareLoop
 
-CareLoop turns reviewed discharge instructions into a daily care plan. Today puts the next pending task first, Plan groups medicines by time, and Care Team shows shared work. More contains Add instructions, the 30-Day Plan, and About & backups. Records, corrections, caregiver labels, and encrypted backups stay local.
+This repository contains the **blue CareLoop app**: the instructor’s compact six-tab interface, with automatic scheduling, local care records, corrections, caregiver editing, and encrypted backups. Earlier interfaces are available in Git history; no alternate app is kept in this folder.
 
 ## Run locally
 
@@ -12,6 +12,10 @@ npm start
 ```
 
 Open http://127.0.0.1:3000/. Close tabs running an older CareLoop version before reopening.
+
+## Phone and tablet layout
+
+On screens up to 900px wide, the original six tabs stay fixed along the bottom. Tables scroll within their own area when needed, with the first column pinned and a swipe hint. Form controls use larger text and touch targets. Desktop keeps the original top navigation.
 
 ## Folder guide
 
@@ -44,13 +48,9 @@ STATIC_DIR=dist npm start
 
 Patient records stay in the browser. Different browsers, addresses, and devices do not share a record. Browser storage behavior for local files varies, so use the same browser and address consistently. Check the final HTTPS address on the intended tablet before release.
 
-## Setup and daily use
-
-Add instructions → Review details → Build care plan → Check preview → Save care plan. Back to details or Escape closes the preview without changing the saved plan. Today provides recording and correction; future-day tasks stay viewable but cannot be recorded early. Medication review and daily task lists adapt to phones without wide tables.
-
 ## Scheduling
 
-Build care plan and Check and adjust times search for times satisfying the supported instructions. They preserve doses and prescribed rules, explain moved times, and block saving if a solution is not found.
+Compile schedule and Auto-resolve schedule search for times satisfying the supported instructions. They preserve doses and prescribed rules, explain moved times, and block saving if a solution is not found.
 
 - Named spacing applies to the specified medicine. A spacing value without a target explicitly applies to all other medicines.
 - Exact 6-, 8-, and 12-hour instructions use elapsed time through midnight and daylight-saving changes. The 30-day plan shows the actual local times on each date.
@@ -64,10 +64,10 @@ The reader handles structured English lines. Unsupported wording remains for rev
 
 ## Records and backups
 
-- **Add instructions:** reopen the saved plan and pasted text, or explicitly discard a draft with Reopen saved plan.
+- **Read Discharge:** reopen the saved plan and pasted text, or explicitly discard a draft with Reopen saved plan.
 - **Today / 30-Day Plan:** record the actual time and local recorder name. Future-day tasks and future timestamps are blocked. Corrections require a reason and retain previous values. Opening an unchanged entry does not rewrite its timestamp.
 - **Care Team:** add, rename, or remove local caregiver labels. Historical recorder names are preserved; future pending assignments from removed caregivers become unassigned.
-- **About & backups:** save an encrypted backup, review and restore a backup, or explicitly confirm deletion. Keep the backup passphrase separately; CareLoop cannot recover it.
+- **About:** save an encrypted backup, review and restore a backup, or explicitly confirm deletion. Keep the backup passphrase separately; CareLoop cannot recover it.
 
 Records are JSON in localStorage under `careloop_instructor_resolver_v1`. Saves use a browser Web Lock and revision checks so updated tabs and stale forms cannot overwrite newer changes. Deletion retains an empty revision marker to prevent stale updated tabs from restoring deleted data.
 
@@ -84,7 +84,7 @@ npm run test:browser
 npm run test:release
 npm run test:records
 npm run test:upgrade
-npm run test:ux
+npm run test:mobile
 npm run format:check
 ```
 

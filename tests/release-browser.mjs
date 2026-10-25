@@ -1,4 +1,3 @@
-import { clickTab, buildAndSave } from "./ui-helpers.mjs";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import assert from "node:assert/strict";
@@ -36,7 +35,7 @@ try {
   await page.clock.install({ time: new Date("2026-10-26T06:59:45Z") });
   await page.goto(url);
   assert.equal(await page.locator("nav button").count(), 6);
-  await clickTab(page, "import");
+  await page.locator('nav [data-t="import"]').click();
   await page
     .locator("#rawText")
     .fill(
@@ -47,7 +46,7 @@ try {
   assert.equal(await page.locator(".fWho").inputValue(), "Oncology");
   await page.locator("#fWeigh").uncheck();
   await page.locator("#fSymptoms").uncheck();
-  await buildAndSave(page);
+  await page.locator("#btnGenerate").click();
   await page.locator("#p-schedule.on").waitFor();
   let record = await page.evaluate(() =>
     JSON.parse(localStorage.getItem("careloop_instructor_resolver_v1")),
@@ -55,16 +54,16 @@ try {
   assert.equal(record.schedule.ok, true);
   assert.deepEqual(Object.values(record.schedule.times), [["22:00"]]);
   assert.equal(record.tasks.find((t) => t.kind === "visit").date, "2026-10-25");
-  await clickTab(page, "home");
+  await page.locator('nav [data-t="home"]').click();
   assert.match(
     await page.locator("#patientWarnings").innerText(),
     /FICTIONAL CUSTOM INSTRUCTION/,
   );
   assert.doesNotMatch(await page.locator("#p-home").innerText(), /2–3 lb/);
   await page.clock.fastForward(60000);
-  assert.match(await page.locator("#homeSub").innerText(), /October 26/);
+  assert.match(await page.locator("#homeSub").innerText(), /2026-10-26/);
   // Exact schedules use real elapsed hours across the forthcoming clock change.
-  await clickTab(page, "import");
+  await page.locator('nav [data-t="import"]').click();
   await page.locator("#btnManual").click();
   await page.locator("#fName").fill("Fictional Interval");
   await page.locator("#fDate").fill("2026-10-25");
@@ -73,7 +72,7 @@ try {
   await page.locator(".mFreq").selectOption("every 12 hours");
   await page.locator("#fWeigh").uncheck();
   await page.locator("#fSymptoms").uncheck();
-  await buildAndSave(page);
+  await page.locator("#btnGenerate").click();
   await page.locator("#p-schedule.on").waitFor();
   record = await page.evaluate(() =>
     JSON.parse(localStorage.getItem("careloop_instructor_resolver_v1")),
@@ -82,7 +81,7 @@ try {
   assert.equal(doses.length, 60);
   for (let i = 1; i < doses.length; i++)
     assert.equal(doses[i].dueAt - doses[i - 1].dueAt, 12 * 3600000);
-  await clickTab(page, "tasks");
+  await page.locator('nav [data-t="tasks"]').click();
   await page.locator("#dayFilter").selectOption("2026-11-01");
   assert.match(await page.locator("#taskList").innerText(), /07:00/);
   assert.match(await page.locator("#taskList").innerText(), /19:00/);
@@ -93,7 +92,7 @@ try {
   await context.setOffline(true);
   await page.reload();
   assert.equal(await page.locator("nav button").count(), 6);
-  await clickTab(page, "home");
+  await page.locator('nav [data-t="home"]').click();
   assert.equal(await page.locator("#patientWarnings").isHidden(), true);
   assert.deepEqual(errors, []);
   console.log(

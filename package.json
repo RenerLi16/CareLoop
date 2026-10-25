@@ -18,7 +18,7 @@
     "test:release": "node tests/release-browser.mjs",
     "test:records": "node tests/records-browser.mjs",
     "test:upgrade": "node tests/upgrade-browser.mjs",
-    "test:ux": "node tests/ux-browser.mjs"
+    "test:mobile": "node tests/mobile-browser.mjs"
   },
   "devDependencies": {
     "prettier": "^3.6.2"

@@ -3,13 +3,13 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>CareLoop — Your care plan at home</title>
+    <title>CareLoop — Discharge-to-Routine Compiler</title>
     <link rel="stylesheet" href="/style.css" />
   </head>
   <body>
     <header>
       <h1>CareLoop</h1>
-      <span class="tag">Your care plan at home</span>
+      <span class="tag">DISCHARGE → ROUTINE COMPILER</span>
       <span
         style="margin-left: auto; font-size: 12px; opacity: 0.85"
         id="hdrPat"
@@ -18,16 +18,11 @@
 
     <nav aria-label="Main navigation">
       <button class="on" data-t="home" aria-current="page">Today</button>
-      <button data-t="schedule">Plan</button>
+      <button data-t="import">Read Discharge</button>
+      <button data-t="schedule">Daily Schedule</button>
+      <button data-t="tasks">30-Day Plan</button>
       <button data-t="team">Care Team</button>
-      <details id="moreNav">
-        <summary>More<span id="moreCurrent"></span></summary>
-        <div class="more-menu">
-          <button data-t="import">Add instructions</button>
-          <button data-t="tasks">30-Day Plan</button>
-          <button data-t="about">About &amp; backups</button>
-        </div>
-      </details>
+      <button data-t="about">About</button>
     </nav>
 
     <main>
@@ -36,37 +31,53 @@
       <section class="panel on" id="p-home">
         <h2>Today</h2>
         <p class="sub" id="homeSub">
-          Add instructions to start your care plan.
+          No plan loaded. Start with Read Discharge.
         </p>
-        <div class="card next-task" id="nextCard" style="display: none">
-          <div class="eyebrow" id="nextHeading">Next task</div>
-          <h3 id="nextTitle"></h3>
-          <p id="nextWho" class="sub"></p>
-          <div class="task-actions">
-            <button class="act" id="btnNextDone">Record dose</button>
-            <button class="ghost" id="btnNextSkip">Skip</button>
+        <div class="grid" id="homeStats"></div>
+        <div id="homeAlerts"></div>
+        <div class="card hd" id="nextCard" style="display: none">
+          <div
+            class="small"
+            style="
+              text-transform: uppercase;
+              letter-spacing: 0.7px;
+              font-weight: 600;
+            "
+          >
+            Next up
+          </div>
+          <div
+            style="
+              font-size: 19px;
+              font-weight: 700;
+              color: var(--navy);
+              margin: 4px 0;
+            "
+            id="nextTitle"
+          >
+            —
+          </div>
+          <div class="small" id="nextWho">—</div>
+          <div style="margin-top: 10px">
+            <button class="act" id="btnNextDone">Mark done</button>
+            <button class="ghost" id="btnNextSkip" style="margin-left: 6px">
+              Skip
+            </button>
           </div>
         </div>
-        <div id="homeAlerts"></div>
-        <div id="homeStats" class="daily-summary"></div>
-        <div id="todayTasks"></div>
         <div id="patientWarnings" class="banner" hidden></div>
       </section>
 
       <section class="panel" id="p-import">
-        <h2>Add discharge instructions</h2>
-        <ol class="setup-steps" aria-label="Plan setup">
-          <li>1. Add instructions</li>
-          <li>2. Review details</li>
-          <li>3. Check &amp; save</li>
-        </ol>
+        <h2>Read discharge instructions</h2>
         <p class="sub">
-          Paste the English discharge summary, then check the details against
-          the original. Nothing is saved until you review the schedule.
+          Paste the English summary. The reader pulls out drugs and, more
+          importantly, the timing rules buried in the sentences — every field
+          stays editable.
         </p>
         <div class="card">
           <div class="field">
-            <label for="rawText">Discharge text</label>
+            <label>Discharge text</label>
             <textarea
               id="rawText"
               placeholder="Paste the discharge summary…"
@@ -76,7 +87,7 @@
             style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px"
           >
             <button class="act" id="btnDemo">Load sample</button>
-            <button class="act" id="btnParse">Review details</button>
+            <button class="act" id="btnParse">Read it</button>
             <button class="ghost" id="btnManual">Enter manually</button>
             <button class="ghost" id="btnReloadPlan" hidden>
               Reopen saved plan
@@ -90,24 +101,24 @@
           <div class="card">
             <h2 style="font-size: 15px">Check what was read</h2>
             <p class="sub">
-              Compare medications, doses, and timing rules with the original
-              instructions. You can edit every detail before building the plan.
+              Timing rules matter more than the drug list. If one was missed,
+              the compiled schedule will be wrong.
             </p>
             <div class="row2">
               <div class="field">
-                <label for="fName">Name</label><input type="text" id="fName" />
+                <label>Name</label><input type="text" id="fName" />
               </div>
               <div class="field">
-                <label for="fAge">Age</label><input type="number" id="fAge" />
+                <label>Age</label><input type="number" id="fAge" />
               </div>
             </div>
             <div class="row2">
               <div class="field">
-                <label for="fDate">Discharge date</label
+                <label>Discharge date</label
                 ><input type="text" id="fDate" placeholder="YYYY-MM-DD" />
               </div>
               <div class="field">
-                <label for="fLang">Patient language</label>
+                <label>Patient language</label>
                 <select id="fLang">
                   <option value="en">English</option>
                   <option value="es">Español</option>
@@ -209,30 +220,26 @@
             ></textarea>
 
             <hr />
-            <button class="act" id="btnGenerate">Build care plan</button>
+            <button class="act" id="btnGenerate">Compile schedule</button>
             <span class="small" id="genStatus" style="margin-left: 10px"></span>
           </div>
         </div>
       </section>
 
       <section class="panel" id="p-schedule">
-        <h2>Your care plan</h2>
+        <h2>Daily schedule</h2>
         <p class="sub">
-          Medication times based on the instructions you reviewed. Open timing
-          details to see the full rules.
+          The compiler places every dose so that all timing rules hold at once.
+          Move one thing and it re-checks the whole day.
         </p>
         <div id="scheduleBody">
-          <span class="small"
-            >Add instructions to build a care plan first.</span
-          >
+          <span class="small">Compile a plan first.</span>
         </div>
       </section>
 
       <section class="panel" id="p-tasks">
         <h2>30-day plan</h2>
-        <p class="sub" id="taskSub">
-          Add instructions to build a care plan first.
-        </p>
+        <p class="sub" id="taskSub">Compile a plan first.</p>
         <div id="conflictBox"></div>
         <div
           style="
@@ -250,15 +257,18 @@
       </section>
 
       <section class="panel" id="p-team">
-        <h2>Care team</h2>
-        <p class="sub">
-          See how care is shared across the 30-day plan. Change assignments in
-          the 30-Day Plan.
-        </p>
+        <h2>Care team load</h2>
+        <p class="sub">Assignments and their completion.</p>
         <div class="card" id="teamCard">
-          <span class="small"
-            >Add instructions to build a care plan first.</span
-          >
+          <span class="small">Compile a plan first.</span>
+        </div>
+        <div class="card hd">
+          <div style="font-size: 12.5px; color: var(--muted)">
+            In 923 surveyed Orange County caregivers, 71% said caregiving is
+            emotionally difficult and 41% felt isolated — but the top complaint
+            was having no time of their own and not knowing what resources
+            exist. Burden stays invisible until someone breaks.
+          </div>
         </div>
         <details class="card">
           <summary>Edit caregivers</summary>
@@ -285,6 +295,46 @@
             gave what — and flags the moment that record stops matching the
             rules.
           </p>
+        </div>
+
+        <div class="card" style="border-left: 4px solid var(--red)">
+          <h3 style="font-size: 14px; color: var(--red); margin: 0 0 6px">
+            Why not just ask a chatbot
+          </h3>
+          <p style="margin: 0 0 8px">
+            A chatbot can turn the text into a list. That part was never the
+            hard part. What it cannot do:
+          </p>
+          <table style="margin: 0">
+            <tr>
+              <td style="width: 42%"><b>Hold state across days</b></td>
+              <td>
+                A chat forgets which dose was actually given at 08:00 yesterday
+              </td>
+            </tr>
+            <tr>
+              <td><b>Solve, not summarise</b></td>
+              <td>
+                “At least two hours apart from Furosemide” is a constraint, not
+                a sentence. It has to be placed, and re-placed every time
+                something moves
+              </td>
+            </tr>
+            <tr>
+              <td><b>Notice a violation afterwards</b></td>
+              <td>
+                Nobody sees that two doses landed 40 minutes apart until the log
+                is checked against the rules
+              </td>
+            </tr>
+            <tr>
+              <td><b>Keep the family’s record</b></td>
+              <td>
+                Caregiver labels and task status on this device; translation and
+                remote sharing are not included
+              </td>
+            </tr>
+          </table>
         </div>
 
         <div class="card">
