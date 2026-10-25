@@ -1354,10 +1354,22 @@ header #hdrPat {
   overflow: hidden;
 }
 
-/* Coral and blue identity: quiet surfaces, a clear selected tab, and a care-circle detail. */
+/* Keep the care-circle ribbons in the viewport background, outside content panels. */
 body {
   background: #f5f9fe;
+  isolation: isolate;
 }
+.page-ribbons {
+  position: fixed;
+  z-index: -1;
+  top: 110px;
+  right: 16px;
+  width: clamp(280px, 34vw, 460px);
+  height: auto;
+  overflow: visible;
+  pointer-events: none;
+}
+
 main {
   max-width: 1280px;
 }
@@ -1370,25 +1382,7 @@ main > .panel > h2 {
   letter-spacing: -0.7px;
   margin-bottom: 20px;
 }
-#p-home::before,
-#p-schedule::before {
-  content: "";
-  position: absolute;
-  z-index: -1;
-  pointer-events: none;
-  width: 210px;
-  height: 125px;
-  top: -28px;
-  right: 0;
-  background: radial-gradient(
-    circle at 100% -20%,
-    transparent 96px,
-    #91cff16b 97px 114px,
-    transparent 115px 128px,
-    #ed81704d 129px 140px,
-    transparent 141px
-  );
-}
+
 nav button.on {
   border-bottom-color: var(--coral);
   background: #f0f7fe;
@@ -1462,11 +1456,11 @@ button.act {
     font-size: 24px;
     margin-bottom: 14px;
   }
-  #p-home::before,
-  #p-schedule::before {
-    width: 150px;
-    height: 100px;
-    opacity: 0.6;
+  .page-ribbons {
+    top: 92px;
+    right: 8px;
+    width: min(300px, calc(100vw - 16px));
+    opacity: 0.7;
   }
 }
 
