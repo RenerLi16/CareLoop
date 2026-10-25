@@ -2,7 +2,19 @@
 const CACHE = "careloop-release-VERSION";
 const FILES = /* ASSET_LIST */ [];
 self.addEventListener("install", (event) =>
-  event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(FILES))),
+  event.waitUntil(
+    (async () => {
+      const legacy = (await caches.keys()).some((key) =>
+        ["careloop-shell-", "careloop-instructor-resolver-"].some((prefix) =>
+          key.startsWith(prefix),
+        ),
+      );
+      await caches.open(CACHE).then((cache) => cache.addAll(FILES));
+      // Replace the retired app even when its other tabs are still open.
+      // Later blue-app updates wait normally, preserving open entry forms.
+      if (legacy) await self.skipWaiting();
+    })(),
+  ),
 );
 self.addEventListener("activate", (event) =>
   event.waitUntil(

@@ -79,7 +79,10 @@ npm run build
 npm run test:browser
 npm run test:release
 npm run test:records
+npm run test:upgrade
 npm run format:check
 ```
 
-Browser checks use isolated profiles and fictional records. Set `PLAYWRIGHT_MODULE` and `PLAYWRIGHT_CHROMIUM_EXECUTABLE` when using an existing Playwright installation. They cover the source app, built website, standalone copy, offline operation, persistence, concurrent writers, actual-time entry, corrections, clock changes, caregiver editing, encrypted recovery, stale restores, and deletion.
+Browser checks use isolated profiles and fictional records. Set `PLAYWRIGHT_MODULE` and `PLAYWRIGHT_CHROMIUM_EXECUTABLE` when using an existing Playwright installation. They cover the source app, built website, standalone copy, offline operation, persistence, concurrent writers, actual-time entry, corrections, clock changes, caregiver editing, encrypted recovery, stale restores, deletion, and upgrading from the retired green app with multiple tabs open.
+
+When replacing the retired green app, the offline worker activates without waiting for all old tabs to close. Reload a CareLoop tab to open the blue app. This removes only old application-file caches; localStorage and IndexedDB records remain. Later blue-app updates wait for open tabs to close so unfinished entries are not interrupted.
