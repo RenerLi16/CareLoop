@@ -1,6 +1,6 @@
 # CareLoop — bedside edition
 
-One patient, one tablet, one locally saved care record. This repository is being converted in separate commit stages. **Stages 1 and 2 are complete: local storage, account removal, and the bedside interface.** Offline installation and final recovery/privacy checks are still to come.
+One patient, one tablet, one locally saved care record. This repository is being converted in separate commit stages. **Stages 1–3 are complete: local storage, the bedside interface, and offline installation support.** Final recovery/privacy checks are still to come.
 
 ## Run locally
 
@@ -51,6 +51,38 @@ Page notifications still require an open, awake page and browser permission. The
 - Save errors remain visible inside the recording dialog. Controls are disabled while saving, and competing-tab checks remain in place.
 - A 30-second foreground refresh updates Today’s date/time state without interrupting open forms. This does not implement closed-app alarms or offline installation.
 
+## What Stage 3 includes
+
+- A home-screen manifest, app icons, Apple touch icon, and standalone display metadata.
+- A service worker that downloads every required app file before reporting **Ready for offline use**. Patient data, backups, exports, arbitrary URLs, and query strings are not added to the app-file cache. Care records stay in their separate IndexedDB database.
+- A status screen under **Manage care → Device and data**, with offline readiness, installation instructions, and browser-reported storage protection.
+- An explicit storage-protection request. The browser may decline or not support it. A grant reduces automatic eviction; it does not prevent deliberate site-data clearing, device loss, or deletion.
+- Content-hashed app-file versions. An update installs into a separate cache and waits until all CareLoop tabs/windows close. It does not force-refresh a recording form or an unsaved plan draft. Old app caches are removed after activation; the care database is not part of this cleanup.
+- A static build (`npm run build`) that packages the app into `dist/`, without the old server database, accounts, or source server.
+
+### Installing on a tablet
+
+1. Open the app at a trusted **HTTPS address** and finish loading it. Localhost/127.0.0.1 are supported for development on the computer running the server. An ordinary HTTP LAN address does not provide offline installation support.
+2. Open **Manage care → Device and data**. Wait for **Ready for offline use**.
+3. Use **Install CareLoop** if offered, or the browser’s **Install app / Add to Home Screen** menu. On iPad/iPhone, use Safari’s Share menu → Add to Home Screen. Browser/OS installation options vary.
+4. Open the home-screen app and check its saved record before relying on it. Test airplane mode, closing/reopening, and restarting the actual tablet. Installation may use a different browser/storage container on some platforms; install before entering important data, or use a private backup/restore to move the record if necessary.
+
+The app files must be downloaded once. After offline readiness, the same browser/profile/address can reopen and record care while offline. Clearing site data or losing the device can still remove records and cached app files. Offline support does not provide alarms while the device is locked or the app is closed.
+
+Sources for platform behavior: [MDN installation requirements](https://developer.mozilla.org/en-US/docs/Web/Progressive_web_apps/Guides/Making_PWAs_installable), [MDN persistent-storage requests](https://developer.mozilla.org/en-US/docs/Web/API/StorageManager/persist), and [Chrome service-worker lifecycle](https://developer.chrome.com/docs/workbox/service-worker-lifecycle).
+
+### Building for static HTTPS hosting
+
+```sh
+npm run build
+```
+
+Publish the **contents of `dist/` at the host’s root**. Do not publish the raw `public/` folder: the build includes shared modules and generates the versioned service worker. No patient record is included in this build. A host can still log ordinary app-file requests; do not put patient details into URLs.
+
+The host must serve JavaScript and the manifest with the correct MIME types, allow `/sw.js` to control `/`, and revalidate `sw.js` rather than keeping an indefinitely stale HTTP cache. The included Node server sets these headers. You can preview the built folder with `STATIC_DIR=dist npm start`.
+
+After changing app files, rebuild and deploy the full folder together. Existing open windows keep their installed version. Finish any unsaved work, close all CareLoop windows, and reopen to activate a downloaded update.
+
 ## Existing server data
 
 This stage **does not open, migrate, or delete** the previous `data/careloop.sqlite` database. If it exists, it is left untouched and remains ignored by Git. The new app starts a separate bedside record. Previous accounts and their data do not automatically appear in the browser.
@@ -61,10 +93,10 @@ The older `careloop-1` server backup format is not accepted as a bedside backup.
 
 1. **Local storage and account removal** — completed in Stage 1. Suggested commit: `feat: move CareLoop to account-free local bedside storage`.
 2. **Bedside interaction** — completed in Stage 2. Suggested commit: `feat: simplify bedside recording and separate care management`.
-3. **Offline installation** — app manifest, icons, service worker, app-file caching, offline reopening, and persistent-storage status. Not started.
+3. **Offline installation** — completed in Stage 3. Suggested commit: `feat: add offline installation and device storage status`.
 4. **Recovery and privacy verification** — additional backup protection, restore and deletion safeguards, final tablet/offline tests, and accurate privacy/demo copy. Not started.
 
-Pause between stages for the user to commit. The app currently still needs the static server for a fresh load or reload. Offline installation is not implemented in Stages 1 or 2.
+Pause between stages for the user to commit. Stage 3 supports reopening after offline readiness without a running server; initial installation and downloading updates still need the app host. Stage 4 remains to be completed.
 
 ## Tests
 
@@ -81,9 +113,10 @@ Optional browser checks use Playwright:
 npm install --no-save playwright
 npx playwright install chromium
 npm run test:browser
+npm run test:offline
 ```
 
-You can set `PLAYWRIGHT_MODULE` and `PLAYWRIGHT_CHROMIUM_EXECUTABLE` to use an existing installation. Browser checks use fresh, isolated browser profiles, fictional data, and the real IndexedDB adapter. They cover reload/reopen persistence, conflicting tabs, transaction rollback, failed-save UI, separate-profile isolation, caregiver entry, recording and skipping, management navigation, current-day/date-filter separation, phone/tablet layouts, and the absence of care-data requests. Screenshots go to ignored `test-results/`.
+You can set `PLAYWRIGHT_MODULE` and `PLAYWRIGHT_CHROMIUM_EXECUTABLE` to use an existing installation. Browser checks use fresh, isolated browser profiles, fictional data, and the real IndexedDB adapter. They cover reload/reopen persistence, conflicting tabs, transaction rollback, failed-save UI, separate-profile isolation, caregiver entry, recording and skipping, management navigation, current-day/date-filter separation, phone/tablet layouts, and the absence of care-data requests. The dedicated offline regression uses a persistent temporary browser profile: it records with networking disabled, stops the actual test server, restarts the browser, reopens the saved record offline, and checks waiting updates without losing a draft. Storage-permission grant/denial UI branches are simulated; actual device installation and permission behavior still need manual tablet testing. Screenshots go to ignored `test-results/`.
 
 ## Structure
 
@@ -92,7 +125,13 @@ src/domain.js              Parsing, scheduling, task generation, warnings, calen
 src/bedside.js             Current-day grouping and next-task selection
 src/care-record.js         Local record validation, mutation, attribution, backup format
 src/server.js              Static development server only
+src/static-app.js          Static asset list, versioned worker generation, build helper
+scripts/build.mjs          Build the deployable dist/ folder
 public/storage.js          IndexedDB transactions and same-device change notifications
+public/offline.js          Offline readiness, installation and storage-permission UI
+public/sw.js               Worker template; build/server supplies version and asset list
+public/manifest.webmanifest Home-screen installation metadata
+public/icons/              App icons and editable SVG source
 public/app.js              Interface, local setup, care workflow, file exports
 public/style.css           Responsive layout
 public/index.html          App entry point
@@ -102,10 +141,12 @@ tests/bedside.test.js      Date grouping, next-task, and progress regression tes
 tests/care-record.test.js  Local record and backup regression tests
 tests/server.test.js       Static-server and endpoint-removal tests
 tests/browser.mjs          Real-browser workflow and local-storage checks
+tests/offline.test.js      Worker, manifest, asset allowlist and build tests
+tests/offline-browser.mjs  Persistent-profile offline and waiting-update checks
 ```
 
 ## Configuration
 
-Only `HOST` (default `127.0.0.1`) and `PORT` (default `3000`) are used by the static server. It does not read `.env` automatically. `DATA_DIR` and `SECURE_COOKIES` are no longer used.
+`HOST` (default `127.0.0.1`) and `PORT` (default `3000`) configure the static server. Optional `STATIC_DIR` serves a built folder instead of source assets. It does not read `.env` automatically. `DATA_DIR` and `SECURE_COOKIES` are no longer used.
 
 This remains a prototype with no clinical validation. Food windows and supported frequency conventions are scheduling assumptions to review against the original paperwork. English text entry is supported; photo import, translations, tapering regimens, as-needed dosing, and closed-app alarms are not implemented.

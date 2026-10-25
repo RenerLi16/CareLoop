@@ -9,6 +9,14 @@ import {
 import { loadRecord, saveChange, onRecordChange } from "/storage.js";
 import { makeBackup } from "/care-record.js";
 import { bedsideDay } from "/bedside.js";
+import {
+  getDeviceStatus,
+  onDeviceStatus,
+  prepareOffline,
+  requestStorageProtection,
+  installApp,
+  checkForUpdates,
+} from "/offline.js";
 
 const $ = (s) => document.querySelector(s),
   esc = (s) =>
@@ -100,7 +108,7 @@ function setup() {
     )
     .join(
       "",
-    )}</div></details><label>Caregiver names (optional, one per line)<textarea name="names" rows="3" placeholder="Lan&#10;Minh"></textarea></label><p class="muted">Caregiver names are labels for this tablet, not verified identities. Anyone with access to this browser can use the record.</p><button type="submit" class="primary">Set up this device</button></form></section><p class="muted">Care information is saved in this browser on this device. Clearing site data or using a different browser will not preserve this record. Offline installation is coming in a later stage.</p></main>`;
+    )}</div></details><label>Caregiver names (optional, one per line)<textarea name="names" rows="3" placeholder="Lan&#10;Minh"></textarea></label><p class="muted">Caregiver names are labels for this tablet, not verified identities. Anyone with access to this browser can use the record.</p><button type="submit" class="primary">Set up this device</button></form></section><p class="muted">Care information is saved in this browser on this device. Clearing site data or using a different browser will not preserve this record. Use Device and data under Manage care to check offline readiness and installation instructions.</p></main>`;
 }
 function storageFailure(message) {
   app.innerHTML = `<main class="setup"><h1>Local storage needs attention.</h1><section class="alert" role="alert"><p>${esc(message)}</p><p>CareLoop has not started a temporary record. Your existing data has not been replaced.</p>${button("retry-storage", "Try opening storage again", "secondary")}</section></main>`;
@@ -122,7 +130,7 @@ function draw() {
     )
     .join(
       "",
-    )}</nav><div class="aside-bottom"><div><b>Saved on this device</b><small>No account · no remote sharing</small></div></div></aside><main class="main"><header><span class="eyebrow">THE NEXT 30 DAYS, TOGETHER</span><span class="sync">● Saved in this browser</span></header><div id="content">${["plan", "team", "settings"].includes(tab) ? `<div class="manage-breadcrumb"><button type="button" class="secondary" data-tab="manage">← Manage care</button><span>Care management · changes affect the saved plan</span></div>` : ""}${{ today: today, plan: planView, schedule: scheduleView, team: teamView, records: recordsView, settings: settingsView, manage: manageView }[tab]()}</div><footer>CareLoop organizes the instructions you enter. It does not diagnose, recommend treatment, or check all possible medication interactions.</footer></main></div>`;
+    )}</nav><div class="aside-bottom"><div><b>Saved on this device</b><small>No account · no remote sharing</small></div></div></aside><main class="main"><header><span class="eyebrow">THE NEXT 30 DAYS, TOGETHER</span><span class="sync" id="offline-indicator" aria-live="polite">${offlineIndicator()}</span></header><div id="content">${["plan", "team", "settings"].includes(tab) ? `<div class="manage-breadcrumb"><button type="button" class="secondary" data-tab="manage">← Manage care</button><span>Care management · changes affect the saved plan</span></div>` : ""}${{ today: today, plan: planView, schedule: scheduleView, team: teamView, records: recordsView, settings: settingsView, manage: manageView }[tab]()}</div><footer>CareLoop organizes the instructions you enter. It does not diagnose, recommend treatment, or check all possible medication interactions.</footer></main></div>`;
   if (renderedTab !== tab) {
     window.scrollTo(0, 0);
     renderedTab = tab;
@@ -425,13 +433,63 @@ function recordsView() {
       .join("")}</section>`
   );
 }
+function offlineIndicator() {
+  const device = getDeviceStatus();
+  return device.updateReady
+    ? "● App update ready · data on this device"
+    : device.ready
+      ? device.networkOffline
+        ? "● Offline · data on this device"
+        : "● Offline ready · data on this device"
+      : "● Data saved locally · offline not ready";
+}
+function deviceStatusView() {
+  const device = getDeviceStatus();
+  const title = device.ready
+    ? "Ready for offline use"
+    : device.preparing
+      ? "Preparing offline files…"
+      : "Offline use is not ready";
+  const persistence =
+    device.persistence === "granted"
+      ? "Protected from automatic browser cleanup"
+      : device.persistence === "checking"
+        ? "Checking storage protection…"
+        : device.persistence === "unavailable"
+          ? "Storage protection is unavailable in this browser"
+          : "Storage protection has not been granted";
+  return `<section class="card device-status" id="device-status" data-offline-ready="${device.ready}" data-persistence="${device.persistence}" data-update-ready="${device.updateReady}"><h2>Install and use offline</h2><p class="device-readiness ${device.ready ? "ready" : ""}" role="status">${title}</p><p>The app files are stored separately from your care record. Once this screen says ready, the care workflow can reopen without the app server or an internet connection.</p>${device.error ? `<p class="notice">${esc(device.error)}</p>` : ""}${!device.ready && !device.preparing && device.supported ? button("prepare-offline", "Prepare offline app", "secondary") : ""}${device.installed ? '<p class="success">Opened as a home-screen app.</p>' : device.canInstall ? button("install-app", "Install CareLoop on this device") : '<p class="muted">To add it to your home screen, use your browser’s Install app or Add to Home Screen option. On iPad/iPhone, use Safari’s Share menu → Add to Home Screen. Available options depend on the browser.</p>'}<h3>Storage protection</h3><p class="storage-protection">${persistence}</p><p class="muted">This permission can reduce automatic data removal. It does not prevent manual site-data clearing, private-browser cleanup, device loss, or deletion. Keep a private backup.</p>${device.persistence === "not-granted" ? button("protect-storage", "Ask browser to protect local storage", "secondary") : ""}<h3>App updates</h3>${device.updateReady ? '<p class="notice">An app update is ready. Finish or discard unsaved drafts, then close every CareLoop tab and app window and reopen. Saved care records stay in the separate device database. This page will not reload itself.</p>' : '<p class="muted">Updates never reload an open recording form. New app files take over after all CareLoop windows close.</p>'}${device.supported ? button("check-updates", "Check for app updates", "secondary") : ""}<p class="muted">Offline use does not add alarms while the tablet is locked or the app is closed. For a tablet’s first installation, use an HTTPS app address. A laptop’s localhost address cannot be opened as that laptop from the tablet.</p></section>`;
+}
+function renderDeviceStatus() {
+  const indicator = $("#offline-indicator");
+  if (indicator) indicator.textContent = offlineIndicator();
+  const panel = $("#device-status");
+  if (panel) {
+    const focused = panel.contains(document.activeElement)
+      ? document.activeElement.dataset.action
+      : null;
+    panel.outerHTML = deviceStatusView();
+    if (focused) {
+      const replacement = document.querySelector(
+        `#device-status [data-action="${focused}"]`,
+      );
+      if (replacement) replacement.focus({ preventScroll: true });
+      else {
+        const updated = $("#device-status");
+        updated.tabIndex = -1;
+        updated.focus({ preventScroll: true });
+      }
+    }
+  }
+}
 function settingsView() {
   return (
     heading(
       "Your data, on this device.",
       "Local care records, optional exports, and reminders.",
     ) +
-    `<section class="card"><h2>Local storage</h2><p>The plan and care history are saved in this browser’s database on this device. They are not sent to the app server. There are no accounts or remote family access.</p><p class="muted">Anyone who can open this browser can read or change the record. Use the tablet’s screen lock. Clearing browser data can delete the record. Backups and calendar exports create separate copies.</p></section><section class="card"><h2>Reminders</h2><p>Page reminders require permission and an open, awake page. They cannot guarantee alarms when the tablet is locked or the browser is closed.</p>${button("reminders", "Enable reminders while this page is open", "secondary")}<h3>Optional calendar export</h3><p class="muted">The file contains care details and a 15-minute reminder. Importing it into a cloud calendar can send those details outside this device. This is a snapshot; later plan edits do not update imported events.</p>${button("calendar", "Download calendar (.ics)", "secondary")}</section><section class="card"><h2>Backup and restore</h2><p>A backup is a plain-text file containing the patient’s care record and activity history. Keep it private. Nothing is uploaded when you download or restore a backup here.</p><div class="actions">${button("backup", "Download backup", "secondary")}<label class="file-label">Restore bedside backup<input type="file" id="backup-upload" accept=".json,application/json"></label></div><p class="muted">Restoring replaces the bedside record in this browser. The older server version’s backups are a different format and cannot be restored here yet.</p><hr><h3>Delete this device’s care data</h3><p>Removes setup, caregivers, plan, records, and activity from this browser’s active record. Exported files and the old server database are separate copies.</p>${button("reset", "Delete care data", "danger-button")}</section><section class="card"><h2>Supported scope</h2><p>English text entry; fixed daily frequencies; food timing windows; named medication spacing rules; 30-day plans. Unsupported instructions require review. Translation and photo reading are not included.</p><p>Offline installation and additional backup protections are planned for later stages. No clinical validation has been performed; use fictional data while testing.</p></section>`
+    deviceStatusView() +
+    `<section class="card"><h2>Local storage</h2><p>The plan and care history are saved in this browser’s database on this device. They are not sent to the app server. There are no accounts or remote family access.</p><p class="muted">Anyone who can open this browser can read or change the record. Use the tablet’s screen lock. Clearing browser data can delete the record. Backups and calendar exports create separate copies.</p></section><section class="card"><h2>Reminders</h2><p>Page reminders require permission and an open, awake page. They cannot guarantee alarms when the tablet is locked or the browser is closed.</p>${button("reminders", "Enable reminders while this page is open", "secondary")}<h3>Optional calendar export</h3><p class="muted">The file contains care details and a 15-minute reminder. Importing it into a cloud calendar can send those details outside this device. This is a snapshot; later plan edits do not update imported events.</p>${button("calendar", "Download calendar (.ics)", "secondary")}</section><section class="card"><h2>Backup and restore</h2><p>A backup is a plain-text file containing the patient’s care record and activity history. Keep it private. Nothing is uploaded when you download or restore a backup here.</p><div class="actions">${button("backup", "Download backup", "secondary")}<label class="file-label">Restore bedside backup<input type="file" id="backup-upload" accept=".json,application/json"></label></div><p class="muted">Restoring replaces the bedside record in this browser. The older server version’s backups are a different format and cannot be restored here yet.</p><hr><h3>Delete this device’s care data</h3><p>Removes setup, caregivers, plan, records, and activity from this browser’s active record. Exported files and the old server database are separate copies.</p>${button("reset", "Delete care data", "danger-button")}</section><section class="card"><h2>Supported scope</h2><p>English text entry; fixed daily frequencies; food timing windows; named medication spacing rules; 30-day plans. Unsupported instructions require review. Translation and photo reading are not included.</p><p>Offline readiness is shown above. Additional backup protections are planned for the final stage. No clinical validation has been performed; use fictional data while testing.</p></section>`
   );
 }
 function updateRecordForm() {
@@ -514,6 +572,37 @@ document.addEventListener("click", (e) => {
 async function action(action, b) {
   if (busy) return;
   try {
+    if (action === "prepare-offline") {
+      await prepareOffline();
+      renderDeviceStatus();
+    }
+    if (action === "protect-storage") {
+      const granted = await requestStorageProtection();
+      renderDeviceStatus();
+      toast(
+        granted
+          ? "Browser storage protection granted. Keep a private backup too."
+          : "The browser did not grant storage protection. Your record is still local; keep a private backup.",
+      );
+    }
+    if (action === "install-app") {
+      const accepted = await installApp();
+      renderDeviceStatus();
+      toast(
+        accepted
+          ? "Installation requested. Your browser will confirm it."
+          : "Installation was not confirmed. You can use the browser’s home-screen menu instead.",
+      );
+    }
+    if (action === "check-updates") {
+      await checkForUpdates();
+      renderDeviceStatus();
+      toast(
+        getDeviceStatus().updateReady
+          ? "Update ready. Close all CareLoop windows after saving your work."
+          : "Update check finished. Offline status is shown above.",
+      );
+    }
     if (action === "clear-filters") {
       filter = "";
       recordQuery = "";
@@ -908,3 +997,6 @@ function refreshBedsideClock() {
 }
 setInterval(refreshBedsideClock, 30000);
 window.addEventListener("focus", refreshBedsideClock);
+
+onDeviceStatus(renderDeviceStatus);
+prepareOffline();

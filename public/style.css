@@ -1159,3 +1159,22 @@ hr {
     padding: 20px 17px;
   }
 }
+
+.device-readiness {
+  padding: 15px 18px;
+  border-radius: 8px;
+  background: #f9f1e0;
+  color: #7b612d;
+  font-weight: 600;
+}
+.device-readiness.ready {
+  background: #edf3e6;
+  color: #175647;
+}
+.device-status .primary,
+.device-status .secondary {
+  margin: 6px 0 12px;
+}
+.storage-protection {
+  font-weight: 550;
+}

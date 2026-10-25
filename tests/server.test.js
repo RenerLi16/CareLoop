@@ -32,6 +32,9 @@ test("serves the local app and modules with a restrictive policy and no cookies"
     "/domain.js",
     "/care-record.js",
     "/sample.txt",
+    "/offline.js",
+    "/manifest.webmanifest",
+    "/icons/icon-192.png",
   ]) {
     const response = await fetch(base + file);
     assert.equal(response.status, 200);
@@ -77,4 +80,12 @@ test("static serving does not expose arbitrary repository files", async () => {
   const response = await fetch(base + "/app.js", { method: "HEAD" });
   assert.equal(response.status, 200);
   assert.equal(await response.text(), "");
+});
+
+test("offline worker is uncached at the HTTP layer and permitted to control the app root", async () => {
+  const response = await fetch(base + "/sw.js");
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("service-worker-allowed"), "/");
+  assert.equal(response.headers.get("cache-control"), "no-cache");
+  assert.match(await response.text(), /const SHELL_CACHE/);
 });

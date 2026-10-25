@@ -1,25 +1,28 @@
 import http from "node:http";
 import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 
 // Development/static hosting only. No care-data API, accounts, cookies, or database.
-const files = {
-  "/bedside.js": ["./bedside.js", "text/javascript; charset=utf-8"],
-  "/": ["../public/index.html", "text/html; charset=utf-8"],
-  "/app.js": ["../public/app.js", "text/javascript; charset=utf-8"],
-  "/storage.js": ["../public/storage.js", "text/javascript; charset=utf-8"],
-  "/domain.js": ["./domain.js", "text/javascript; charset=utf-8"],
-  "/care-record.js": ["./care-record.js", "text/javascript; charset=utf-8"],
-  "/style.css": ["../public/style.css", "text/css; charset=utf-8"],
-  "/sample.txt": ["../public/sample.txt", "text/plain; charset=utf-8"],
-};
+import {
+  APP_FILES,
+  outputName,
+  readSourceAsset,
+  renderServiceWorker,
+} from "./static-app.js";
+import path from "node:path";
+const staticDir = process.env.STATIC_DIR
+  ? path.resolve(process.env.STATIC_DIR)
+  : null;
+const readAsset = (route) =>
+  staticDir
+    ? readFileSync(path.join(staticDir, outputName(route)))
+    : readSourceAsset(route);
 export const server = http.createServer((req, res) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("Referrer-Policy", "no-referrer");
   res.setHeader("X-Frame-Options", "DENY");
   res.setHeader(
     "Content-Security-Policy",
-    "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
+    "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
   );
   res.setHeader("Cache-Control", "no-cache");
   if (!["GET", "HEAD"].includes(req.method)) {
@@ -38,16 +41,30 @@ export const server = http.createServer((req, res) => {
     res.end("Invalid address.");
     return;
   }
-  const file = files[route];
+  if (route === "/sw.js") {
+    try {
+      const script = staticDir
+        ? readFileSync(path.join(staticDir, "sw.js"))
+        : renderServiceWorker();
+      res.writeHead(200, {
+        "Content-Type": "text/javascript; charset=utf-8",
+        "Service-Worker-Allowed": "/",
+      });
+      res.end(req.method === "HEAD" ? undefined : script);
+    } catch {
+      res.writeHead(500);
+      res.end("Offline app files could not be prepared.");
+    }
+    return;
+  }
+  const file = APP_FILES[route];
   if (!file) {
     res.writeHead(404);
     res.end("Not found.");
     return;
   }
   try {
-    const bytes = readFileSync(
-      fileURLToPath(new URL(file[0], import.meta.url)),
-    );
+    const bytes = readAsset(route);
     res.writeHead(200, { "Content-Type": file[1] });
     res.end(req.method === "HEAD" ? undefined : bytes);
   } catch {
