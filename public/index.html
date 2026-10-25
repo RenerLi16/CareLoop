@@ -1,21 +1,392 @@
 <!doctype html>
 <html lang="en">
   <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#14304f" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-title" content="CareLoop" />
-    <link rel="manifest" href="/manifest.webmanifest" />
-    <link rel="icon" href="/icons/careloop.svg" type="image/svg+xml" />
-    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
-    <title>CareLoop · Care, together</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>CareLoop — Discharge-to-Routine Compiler</title>
     <link rel="stylesheet" href="/style.css" />
-    <link rel="stylesheet" href="/instructor.css" />
-    <script type="module" src="/app.js"></script>
   </head>
   <body>
-    <div id="app"></div>
-    <div id="toast" role="status" aria-live="polite"></div>
+    <header>
+      <h1>CareLoop</h1>
+      <span class="tag">DISCHARGE → ROUTINE COMPILER</span>
+      <span
+        style="margin-left: auto; font-size: 12px; opacity: 0.85"
+        id="hdrPat"
+      ></span>
+    </header>
+
+    <nav>
+      <button class="on" data-t="home">Today</button>
+      <button data-t="import">Read Discharge</button>
+      <button data-t="schedule">Daily Schedule</button>
+      <button data-t="tasks">30-Day Plan</button>
+      <button data-t="team">Care Team</button>
+      <button data-t="about">About</button>
+    </nav>
+
+    <main>
+      <p id="saveStatus" class="small" role="alert"></p>
+
+      <section class="panel on" id="p-home">
+        <h2>Today</h2>
+        <p class="sub" id="homeSub">
+          No plan loaded. Start with Read Discharge.
+        </p>
+        <div class="grid" id="homeStats"></div>
+        <div id="homeAlerts"></div>
+        <div class="card hd" id="nextCard" style="display: none">
+          <div
+            class="small"
+            style="
+              text-transform: uppercase;
+              letter-spacing: 0.7px;
+              font-weight: 600;
+            "
+          >
+            Next up
+          </div>
+          <div
+            style="
+              font-size: 19px;
+              font-weight: 700;
+              color: var(--navy);
+              margin: 4px 0;
+            "
+            id="nextTitle"
+          >
+            —
+          </div>
+          <div class="small" id="nextWho">—</div>
+          <div style="margin-top: 10px">
+            <button class="act" id="btnNextDone">Mark done</button>
+            <button class="ghost" id="btnNextSkip" style="margin-left: 6px">
+              Skip
+            </button>
+          </div>
+        </div>
+        <div class="banner">
+          <b>Call the doctor</b> — weight up more than 2–3 lb in a day or 5 lb
+          in a week, or worsening breathlessness. <b>Call 911</b> for chest
+          pain, fainting, or severe breathlessness.
+          <div class="small" style="margin-top: 6px">
+            CareLoop does not give medical advice. It compiles a schedule and
+            keeps the family's record consistent.
+          </div>
+        </div>
+      </section>
+
+      <section class="panel" id="p-import">
+        <h2>Read discharge instructions</h2>
+        <p class="sub">
+          Paste the English summary. The reader pulls out drugs and, more
+          importantly, the timing rules buried in the sentences — every field
+          stays editable.
+        </p>
+        <div class="card">
+          <div class="field">
+            <label>Discharge text</label>
+            <textarea
+              id="rawText"
+              placeholder="Paste the discharge summary…"
+            ></textarea>
+          </div>
+          <div
+            style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px"
+          >
+            <button class="act" id="btnDemo">Load sample</button>
+            <button class="act" id="btnParse">Read it</button>
+            <button class="ghost" id="btnManual">Enter manually</button>
+          </div>
+          <div class="small" id="parseStatus" style="margin-top: 8px"></div>
+        </div>
+
+        <div id="reviewBox" style="display: none">
+          <div id="readWarnings"></div>
+          <div class="card">
+            <h2 style="font-size: 15px">Check what was read</h2>
+            <p class="sub">
+              Timing rules matter more than the drug list. If one was missed,
+              the compiled schedule will be wrong.
+            </p>
+            <div class="row2">
+              <div class="field">
+                <label>Name</label><input type="text" id="fName" />
+              </div>
+              <div class="field">
+                <label>Age</label><input type="number" id="fAge" />
+              </div>
+            </div>
+            <div class="row2">
+              <div class="field">
+                <label>Discharge date</label
+                ><input type="text" id="fDate" placeholder="YYYY-MM-DD" />
+              </div>
+              <div class="field">
+                <label>Patient language</label>
+                <select id="fLang">
+                  <option value="en">English</option>
+                  <option value="es">Español</option>
+                  <option value="vi">Tiếng Việt</option>
+                </select>
+              </div>
+            </div>
+
+            <h3
+              style="font-size: 13px; margin: 16px 0 6px; color: var(--navy2)"
+            >
+              Medications and timing rules
+            </h3>
+            <table id="medTable">
+              <thead>
+                <tr>
+                  <th>Drug</th>
+                  <th style="width: 74px">Dose</th>
+                  <th style="width: 116px">How often</th>
+                  <th style="width: 100px">Meal</th>
+                  <th style="width: 150px">Separate from</th>
+                  <th style="width: 80px">Gap (h)</th>
+                  <th style="width: 38px"></th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+            <button class="mini" id="btnAddMed" style="margin-top: 8px">
+              + Add medication
+            </button>
+            <div class="small" style="margin-top: 6px">
+              Gap = minimum hours from the named medicine; blank name means all
+              others. Use only the written instructions.
+            </div>
+
+            <details class="small" style="margin-top: 10px">
+              <summary>Meal times</summary>
+              <div class="meal-times">
+                <label
+                  >Breakfast
+                  <input id="meal-breakfast" type="time" value="08:00" /></label
+                ><label
+                  >Lunch
+                  <input id="meal-lunch" type="time" value="12:00" /></label
+                ><label
+                  >Dinner <input id="meal-dinner" type="time" value="18:00"
+                /></label>
+              </div>
+              <div>
+                With food: within 30 min. Before/after food: 15–60 min. Morning:
+                08:00; bedtime: 22:00. Exact intervals stay exact; other
+                multiple daily doses use daytime slots at least 4h apart. Review
+                these supported timing assumptions against the instructions.
+              </div>
+            </details>
+            <h3
+              style="font-size: 13px; margin: 16px 0 6px; color: var(--navy2)"
+            >
+              Follow-up
+            </h3>
+            <table id="fuTable">
+              <thead>
+                <tr>
+                  <th>Who</th>
+                  <th style="width: 108px">Within (days)</th>
+                  <th style="width: 38px"></th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+            <button class="mini" id="btnAddFu" style="margin-top: 8px">
+              + Add follow-up
+            </button>
+
+            <h3
+              style="font-size: 13px; margin: 16px 0 6px; color: var(--navy2)"
+            >
+              Monitoring
+            </h3>
+            <label class="ck"
+              ><input type="checkbox" id="fWeigh" checked /> Morning weight,
+              every day</label
+            >
+            <label class="ck"
+              ><input type="checkbox" id="fSymptoms" checked /> Daily symptom
+              check</label
+            >
+
+            <h3
+              style="font-size: 13px; margin: 16px 0 6px; color: var(--navy2)"
+            >
+              Red flags
+            </h3>
+            <div id="flagList" class="small">—</div>
+
+            <hr />
+            <button class="act" id="btnGenerate">Compile schedule</button>
+            <span class="small" id="genStatus" style="margin-left: 10px"></span>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel" id="p-schedule">
+        <h2>Daily schedule</h2>
+        <p class="sub">
+          The compiler places every dose so that all timing rules hold at once.
+          Move one thing and it re-checks the whole day.
+        </p>
+        <div id="scheduleBody">
+          <span class="small">Compile a plan first.</span>
+        </div>
+      </section>
+
+      <section class="panel" id="p-tasks">
+        <h2>30-day plan</h2>
+        <p class="sub" id="taskSub">Compile a plan first.</p>
+        <div id="conflictBox"></div>
+        <div
+          style="
+            margin: 12px 0;
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            align-items: center;
+          "
+        >
+          <select id="dayFilter" style="width: auto; min-width: 190px"></select>
+          <button class="mini" id="btnAllDays">Show all days</button>
+        </div>
+        <div id="taskList"></div>
+      </section>
+
+      <section class="panel" id="p-team">
+        <h2>Care team load</h2>
+        <p class="sub">Who is actually carrying this.</p>
+        <div class="card" id="teamCard">
+          <span class="small">Compile a plan first.</span>
+        </div>
+        <div class="card hd">
+          <div style="font-size: 12.5px; color: var(--muted)">
+            In 923 surveyed Orange County caregivers, 71% said caregiving is
+            emotionally difficult and 41% felt isolated — but the top complaint
+            was having no time of their own and not knowing what resources
+            exist. Burden stays invisible until someone breaks.
+          </div>
+        </div>
+      </section>
+
+      <section class="panel" id="p-about">
+        <h2>About CareLoop</h2>
+
+        <div class="card">
+          <h3 style="font-size: 14px; color: var(--navy); margin: 0 0 6px">
+            What it does
+          </h3>
+          <p style="margin: 0">
+            Reads structured English discharge instructions, extracts supported
+            timing rules written into it, and compiles a daily schedule that
+            satisfies all of them at once. Then it keeps a local record of who
+            gave what — and flags the moment that record stops matching the
+            rules.
+          </p>
+        </div>
+
+        <div class="card" style="border-left: 4px solid var(--red)">
+          <h3 style="font-size: 14px; color: var(--red); margin: 0 0 6px">
+            Why not just ask a chatbot
+          </h3>
+          <p style="margin: 0 0 8px">
+            A chatbot can turn the text into a list. That part was never the
+            hard part. What it cannot do:
+          </p>
+          <table style="margin: 0">
+            <tr>
+              <td style="width: 42%"><b>Hold state across days</b></td>
+              <td>
+                A chat forgets which dose was actually given at 08:00 yesterday
+              </td>
+            </tr>
+            <tr>
+              <td><b>Solve, not summarise</b></td>
+              <td>
+                “At least two hours apart from Furosemide” is a constraint, not
+                a sentence. It has to be placed, and re-placed every time
+                something moves
+              </td>
+            </tr>
+            <tr>
+              <td><b>Notice a violation afterwards</b></td>
+              <td>
+                Nobody sees that two doses landed 40 minutes apart until the log
+                is checked against the rules
+              </td>
+            </tr>
+            <tr>
+              <td><b>Keep the family’s record</b></td>
+              <td>
+                Caregiver labels and task status on this device; translation and
+                remote sharing are not included
+              </td>
+            </tr>
+          </table>
+        </div>
+
+        <div class="card">
+          <h3 style="font-size: 14px; color: var(--navy); margin: 0 0 6px">
+            What it is not
+          </h3>
+          <p style="margin: 0">
+            Not a medical device. It does not advise, diagnose, or predict
+            outcomes. It compiles a schedule from what a clinician already wrote
+            down, and keeps a family's record consistent. All sample data is
+            fictional.
+          </p>
+        </div>
+
+        <div class="card" style="border-left: 4px solid var(--navy)">
+          <h3 style="font-size: 14px; color: var(--navy); margin: 0 0 6px">
+            Privacy and offline design
+          </h3>
+          <p style="margin: 0 0 8px">
+            Everything runs in the browser. There is no server, no account, and
+            no network call: the file opens from disk and works with the wi-fi
+            off.
+          </p>
+          <p style="margin: 0">
+            A pasted discharge summary is parsed by a fixed rule set — section
+            markers, dose patterns, frequency phrases, meal relations, and
+            interval phrases such as “at least two hours apart”. Unrecognized
+            medication lines are shown for manual review; sample medicines are
+            never inserted into real input. The parsed fields are shown for
+            review before any schedule is built. All sample data in this file is
+            fictional.
+          </p>
+        </div>
+        <div class="card">
+          <h3 style="font-size: 14px; color: var(--navy); margin: 0 0 6px">
+            Built with
+          </h3>
+          <p class="mono" style="margin: 0">
+            HTML · CSS · JavaScript · local JSON storage<br />
+            No account or care-data backend. Build produces a standalone HTML
+            file.
+          </p>
+          <p class="small" style="margin: 8px 0 0">
+            Runs on one device. No server, no account, no patient data leaves
+            the browser. A judge can open the file and exercise every screen.
+          </p>
+        </div>
+
+        <hr />
+        <div class="card">
+          <h3 style="font-size: 14px; color: var(--navy); margin: 0 0 8px">
+            Demo controls
+          </h3>
+          <div style="display: flex; gap: 8px; flex-wrap: wrap">
+            <button class="ghost" id="btnSeed">Reload sample family</button>
+            <button class="ghost" id="btnReset">Reset all data</button>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="/app.js"></script>
   </body>
 </html>
