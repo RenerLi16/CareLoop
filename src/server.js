@@ -1,36 +1,21 @@
 import http from "node:http";
 import { readFileSync } from "node:fs";
-
-// Development/static hosting only. No care-data API, accounts, cookies, or database.
-import {
-  APP_FILES,
-  outputName,
-  readSourceAsset,
-  renderServiceWorker,
-} from "./static-app.js";
 import path from "node:path";
-const staticDir = process.env.STATIC_DIR
+import { ASSETS, sourceAsset, serviceWorker } from "./assets.js";
+const staticDirectory = process.env.STATIC_DIR
   ? path.resolve(process.env.STATIC_DIR)
   : null;
-const readAsset = (route) =>
-  staticDir
-    ? readFileSync(path.join(staticDir, outputName(route)))
-    : readSourceAsset(route);
 export const server = http.createServer((req, res) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("Referrer-Policy", "no-referrer");
-  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Cache-Control", "no-cache");
   res.setHeader(
     "Content-Security-Policy",
-    "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
   );
-  res.setHeader("Cache-Control", "no-cache");
   if (!["GET", "HEAD"].includes(req.method)) {
-    res.writeHead(405, {
-      "Content-Type": "text/plain; charset=utf-8",
-      Allow: "GET, HEAD",
-    });
-    res.end("CareLoop saves on this device. This server does not accept data.");
+    res.writeHead(405);
+    res.end("No care-data uploads.");
     return;
   }
   let route;
@@ -41,38 +26,39 @@ export const server = http.createServer((req, res) => {
     res.end("Invalid address.");
     return;
   }
-  if (route === "/sw.js") {
-    try {
-      const script = staticDir
-        ? readFileSync(path.join(staticDir, "sw.js"))
-        : renderServiceWorker();
-      res.writeHead(200, {
-        "Content-Type": "text/javascript; charset=utf-8",
-        "Service-Worker-Allowed": "/",
-      });
-      res.end(req.method === "HEAD" ? undefined : script);
-    } catch {
-      res.writeHead(500);
-      res.end("Offline app files could not be prepared.");
-    }
-    return;
-  }
-  const file = APP_FILES[route];
-  if (!file) {
+  const file = ASSETS[route];
+  if (!file && route !== "/sw.js") {
     res.writeHead(404);
     res.end("Not found.");
     return;
   }
   try {
-    const bytes = readAsset(route);
-    res.writeHead(200, { "Content-Type": file[1] });
-    res.end(req.method === "HEAD" ? undefined : bytes);
+    const body = staticDirectory
+      ? readFileSync(
+          path.join(
+            staticDirectory,
+            route === "/" ? "index.html" : route.slice(1),
+          ),
+        )
+      : route === "/sw.js"
+        ? serviceWorker()
+        : sourceAsset(route);
+    if (route === "/sw.js") res.setHeader("Service-Worker-Allowed", "/");
+    res.writeHead(200, {
+      "Content-Type":
+        route === "/sw.js" ? "text/javascript; charset=utf-8" : file[1],
+    });
+    res.end(req.method === "HEAD" ? undefined : body);
   } catch {
     res.writeHead(500);
-    res.end("The app files could not be loaded.");
+    res.end("App files could not be loaded.");
   }
 });
-const host = process.env.HOST || "127.0.0.1";
-server.listen(Number(process.env.PORT || 3000), host, () =>
-  console.log(`CareLoop is running at http://${host}:${server.address().port}`),
+server.listen(
+  Number(process.env.PORT || 3000),
+  process.env.HOST || "127.0.0.1",
+  () =>
+    console.log(
+      `CareLoop is running at http://${process.env.HOST || "127.0.0.1"}:${server.address().port}`,
+    ),
 );

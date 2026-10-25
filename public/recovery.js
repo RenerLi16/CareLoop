@@ -1,199 +1,168 @@
-import { makeBackup, validateBackup, BACKUP_FORMAT } from "/care-record.js";
-import {
-  protectFile,
-  unlockFile,
-  PROTECTED_FORMAT,
-  MAX_FILE_BYTES,
-} from "/file-protection.js";
-const esc = (value) =>
+import { protectFile, unlockFile, MAX_FILE_BYTES } from "./file-protection.js";
+import { BACKUP_FORMAT, validateBackup, emptyRecord } from "./record.js";
+const escape = (value) =>
   String(value ?? "").replace(
     /[&<>"']/g,
-    (c) =>
+    (char) =>
       ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[
-        c
+        char
       ],
   );
-const summary = (record) =>
-  record?.profile
-    ? `<dl class="recovery-summary"><div><dt>Patient</dt><dd>${esc(record.profile.patient)}</dd></div><div><dt>Plan starts</dt><dd>${esc(record.plan?.startDate || record.profile.startDate)}</dd></div><div><dt>Care tasks</dt><dd>${record.tasks.length}</dd></div><div><dt>Completed / skipped</dt><dd>${record.tasks.filter((t) => t.status === "done").length} / ${record.tasks.filter((t) => t.status === "skipped").length}</dd></div><div><dt>Caregiver labels</dt><dd>${record.team.filter((p) => !p.archived).length}</dd></div></dl>`
-    : "<p>No bedside record is set up in this browser.</p>";
-const password = (name, label, creating = false) =>
-  `<label>${label}<input type="password" name="${name}" ${creating ? 'minlength="12"' : ""} maxlength="256" required autocomplete="${creating ? "new-password" : "current-password"}"></label>`;
-export function createRecovery({
-  getLatest,
-  save,
-  download,
-  onComplete,
-  toast,
-}) {
+export function createRecovery({ snapshot, replace, notify, afterChange }) {
   let dialog,
+    selected,
+    baseline,
     working = false,
-    epoch = 0,
-    selected = null,
-    expectedVersion;
-  function cancel() {
+    epoch = 0;
+  const summary = (record) =>
+    `<dl class="backup-summary"><dt>Patient</dt><dd>${escape(record.patient?.name || "No plan")}</dd><dt>Tasks</dt><dd>${record.tasks.length}</dd><dt>Recorded</dt><dd>${record.tasks.filter((t) => t.status !== "todo").length}</dd><dt>Caregivers</dt><dd>${record.team.filter((p) => !p.archived).length}</dd></dl>`;
+  const controls = (label) =>
+    `<p id="recovery-error" role="alert"></p><div class="dialog-actions"><button class="act" type="submit">${label}</button><button class="ghost" type="button" data-recovery="cancel">Cancel</button></div>`;
+  const pass = (label, name) =>
+    `<label class="field">${label}<input type="password" name="${name}" required maxlength="256" autocomplete="off"></label>`;
+  function close() {
     epoch++;
     selected = null;
-    dialog?.close();
-    dialog?.remove();
-    dialog = null;
+    baseline = null;
+    working = false;
+    if (dialog) {
+      dialog.close();
+      dialog.remove();
+      dialog = null;
+    }
   }
-  function show(content) {
-    cancel();
-    dialog = document.createElement("dialog");
-    dialog.id = "recovery-dialog";
-    dialog.setAttribute("aria-labelledby", "recovery-title");
-    dialog.innerHTML = content;
-    document.body.append(dialog);
-    dialog.addEventListener("cancel", (event) => {
-      if (working) event.preventDefault();
-    });
-    const owned = dialog;
-    dialog.addEventListener("close", () => {
-      if (dialog === owned) {
-        epoch++;
-        selected = null;
-        dialog = null;
-      }
-      owned.remove();
-    });
-    dialog.addEventListener("click", (event) => {
-      const action = event.target.closest("[data-recovery-action]")?.dataset
-        .recoveryAction;
-      if (working || !action) return;
-      if (action === "cancel") cancel();
-      if (action === "export")
-        openExport().catch((error) => toast(error.message, true));
-    });
-    dialog.addEventListener("submit", submit);
-    dialog.showModal();
-    return dialog;
+  function show(html) {
+    if (!dialog) {
+      dialog = document.createElement("dialog");
+      dialog.id = "recovery-dialog";
+      dialog.setAttribute("aria-labelledby", "recovery-title");
+      document.body.append(dialog);
+      dialog.addEventListener("cancel", (event) => {
+        event.preventDefault();
+        const kind = dialog.querySelector("form")?.dataset.recoveryForm;
+        if (working && ["restore", "delete"].includes(kind)) return;
+        close();
+      });
+      dialog.addEventListener("click", (event) => {
+        const action =
+          event.target.closest("[data-recovery]")?.dataset.recovery;
+        if (action === "cancel") close();
+        if (action === "backup" && !working) openExport();
+      });
+      dialog.addEventListener("submit", submit);
+      dialog.showModal();
+    }
+    dialog.innerHTML = html;
   }
-  const footer = (label) =>
-    `<p class="alert" id="recovery-error" role="alert" tabindex="-1" hidden></p><div class="actions"><button type="submit" class="primary">${label}</button><button type="button" class="secondary" data-recovery-action="cancel">Cancel</button></div>`;
-  async function openExport() {
-    const record = await getLatest();
-    if (!record.profile)
-      throw new Error("There is no saved bedside record to back up yet.");
+  function openExport() {
+    close();
+    const current = snapshot();
+    if (!current.record.patient) {
+      notify("Save a care plan before making a backup.");
+      return;
+    }
+    selected = {
+      format: BACKUP_FORMAT,
+      createdAt: new Date().toISOString(),
+      record: current.record,
+    };
     show(
-      `<form data-recovery-form="export"><h2 id="recovery-title">Save an encrypted backup</h2><p>This file contains the saved record, including care history and caregiver names. Unsaved drafts are not included.</p>${summary(record)}${password("passphrase", "Backup passphrase (at least 12 characters)", true)}${password("repeat", "Repeat backup passphrase", true)}<p class="notice">Keep this passphrase separately. CareLoop does not save it and cannot recover it. This protects the exported file; the bedside app still has no sign-in.</p>${footer("Encrypt and download")}</form>`,
+      `<form data-recovery-form="export"><h2 id="recovery-title">Save encrypted backup</h2>${summary(current.record)}${pass("Passphrase (at least 12 characters)", "passphrase")}${pass("Repeat passphrase", "repeat")}<p class="small">Keep the passphrase. CareLoop cannot recover it.</p>${controls("Encrypt and download")}</form>`,
     );
-    selected = makeBackup(record);
   }
   async function openImport(file) {
-    if (!file || file.size > MAX_FILE_BYTES)
-      throw new Error("Choose a CareLoop backup under 7 MB.");
-    const baseline = await getLatest();
-    let parsed;
+    close();
+    if (!file || file.size > MAX_FILE_BYTES) {
+      notify("Choose a CareLoop backup under 7 MB.");
+      return;
+    }
+    const operation = ++epoch;
+    baseline = snapshot();
     try {
-      parsed = JSON.parse(await file.text());
-    } catch {
-      throw new Error(
-        "This file is not valid backup JSON. Nothing was changed.",
-      );
-    }
-    if (parsed?.format === PROTECTED_FORMAT) {
+      const value = JSON.parse(await file.text());
+      if (operation !== epoch) return;
+      selected = value;
       show(
-        `<form data-recovery-form="unlock"><h2 id="recovery-title">Unlock backup for review</h2><p>Enter the file’s passphrase. Unlocking and reviewing it does not replace this device’s record.</p>${password("passphrase", "Backup passphrase")}${footer("Unlock and review")}</form>`,
+        `<form data-recovery-form="unlock"><h2 id="recovery-title">Unlock backup</h2>${pass("Backup passphrase", "passphrase")}${controls("Unlock and review")}</form>`,
       );
-      selected = parsed;
-      expectedVersion = baseline.version;
-    } else {
-      if (parsed?.format !== BACKUP_FORMAT)
-        throw new Error(
-          "This is not a supported bedside backup. Nothing was changed.",
-        );
-      showPreview(parsed, baseline, baseline.version, true);
+    } catch (error) {
+      if (operation === epoch)
+        notify("This file is not a readable CareLoop backup.");
     }
   }
-  function showPreview(backup, current, version, plain) {
-    const record = validateBackup(backup);
-    const date = new Date(backup.exportedAt).toLocaleString();
+  function openDelete() {
+    close();
+    baseline = snapshot();
     show(
-      `<form data-recovery-form="restore"><h2 id="recovery-title">Review before restoring</h2><p>Backup created ${esc(date)}. No record has been replaced.</p>${plain ? '<p class="notice">This is an older unencrypted bedside backup. The file can be read by anyone who has it. New downloads use encryption.</p>' : ""}<div class="restore-comparison"><section><h3>Backup to restore</h3>${summary(record)}</section><section><h3>Currently on this device</h3>${summary(current)}</section></div><label class="check"><input type="checkbox" name="understood" required>I understand this replaces the saved bedside record and current drafts. I have kept any current data I need.</label><label>Type RESTORE to replace the record<input name="confirmation" required autocomplete="off" pattern="RESTORE"></label>${footer("Replace with this backup")}</form>`,
+      `<form data-recovery-form="delete"><h2 id="recovery-title">Delete this care record?</h2>${summary(baseline.record)}<p>Deletes the plan and records in this browser. Downloaded backups remain.</p><button type="button" class="ghost" data-recovery="backup">Save a backup first</button><label class="ck"><input type="checkbox" name="understood" required>I understand this cannot be undone without a backup.</label><label class="field">Type DELETE<input name="confirmation" required pattern="DELETE" autocomplete="off"></label>${controls("Delete record")}</form>`,
     );
-    selected = { ...backup, record };
-    expectedVersion = version;
-  }
-  async function openDelete() {
-    const record = await getLatest();
-    if (!record.profile)
-      throw new Error("There is no bedside record to delete.");
-    show(
-      `<form data-recovery-form="delete"><h2 id="recovery-title">Delete this browser’s care record?</h2>${summary(record)}<p>Deletes saved setup, caregiver names, the plan, tasks, and activity in this browser. Unsaved drafts will be discarded. This does not remove downloaded files, external calendars, the old server database, or device backups. This is not secure wiping of the device.</p><button type="button" class="secondary" data-recovery-action="export">Save an encrypted backup first</button><p class="muted">After downloading, check the file is in your downloads before returning to delete the record.</p><label class="check"><input type="checkbox" name="understood" required>I understand this cannot be undone here without a backup.</label><label>Type DELETE to confirm<input name="confirmation" required autocomplete="off" pattern="DELETE"></label>${footer("Delete this browser’s record")}</form>`,
-    );
-    expectedVersion = record.version;
   }
   async function submit(event) {
     event.preventDefault();
     if (working) return;
     const form = event.target,
-      kind = form.dataset.recoveryForm,
       data = new FormData(form),
-      token = epoch;
-    const buttons = [...form.querySelectorAll("button")];
+      kind = form.dataset.recoveryForm,
+      operation = epoch;
     working = true;
-    buttons.forEach((button) => (button.disabled = true));
-    const error = form.querySelector("#recovery-error");
-    error.hidden = true;
+    for (const control of dialog.querySelectorAll("button,input"))
+      control.disabled = true;
     try {
       if (kind === "export") {
         if (data.get("passphrase") !== data.get("repeat"))
-          throw new Error("The two backup passphrases do not match.");
-        validateBackup(selected);
+          throw new Error("The passphrases do not match.");
         const encrypted = await protectFile(selected, data.get("passphrase"));
-        if (token !== epoch) return;
-        download(
-          `careloop-backup-${new Date().toISOString().slice(0, 10)}.json`,
-          JSON.stringify(encrypted),
-          "application/json",
+        if (operation !== epoch) return;
+        const url = URL.createObjectURL(
+            new Blob([JSON.stringify(encrypted)], { type: "application/json" }),
+          ),
+          link = document.createElement("a");
+        link.href = url;
+        link.download =
+          "careloop-backup-" + new Date().toISOString().slice(0, 10) + ".json";
+        document.body.append(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        close();
+        notify("Encrypted backup downloaded.");
+      } else if (kind === "unlock") {
+        const payload = await unlockFile(selected, data.get("passphrase"));
+        if (operation !== epoch) return;
+        const record = validateBackup(payload);
+        selected = record;
+        show(
+          `<form data-recovery-form="restore"><h2 id="recovery-title">Review before restoring</h2><div class="restore-columns"><section><h3>Backup</h3>${summary(record)}</section><section><h3>Current record</h3>${summary(baseline.record)}</section></div><label class="ck"><input type="checkbox" name="understood" required>Replace this browser’s saved record and drafts.</label><label class="field">Type RESTORE<input name="confirmation" required pattern="RESTORE" autocomplete="off"></label>${controls("Restore this backup")}</form>`,
         );
-        form.reset();
-        cancel();
-        toast(
-          "Encrypted download started. Check the saved file and keep its passphrase separately.",
-        );
-      }
-      if (kind === "unlock") {
-        const decrypted = await unlockFile(selected, data.get("passphrase"));
-        if (token !== epoch) return;
-        form.reset();
-        const current = await getLatest();
-        if (token !== epoch) return;
-        showPreview(decrypted, current, expectedVersion, false);
-      }
-      if (kind === "restore" || kind === "delete") {
+      } else if (kind === "restore" || kind === "delete") {
         const word = kind === "restore" ? "RESTORE" : "DELETE";
         if (data.get("confirmation") !== word || !data.has("understood"))
-          throw new Error(`Acknowledge the change and type ${word} exactly.`);
-        await save(
-          kind === "restore"
-            ? { type: "restore", backup: selected }
-            : { type: "reset", confirm: "DELETE" },
-          expectedVersion,
+          throw new Error("Complete the confirmation first.");
+        await replace(
+          kind === "restore" ? selected : emptyRecord(),
+          baseline.token,
         );
-        if (token !== epoch) return;
-        cancel();
-        await onComplete(kind);
-        toast(
-          kind === "restore"
-            ? "Backup restored on this device."
-            : "This browser’s care record was deleted.",
+        if (operation !== epoch) return;
+        close();
+        afterChange();
+        notify(
+          kind === "restore" ? "Backup restored." : "Care record deleted.",
         );
       }
-    } catch (problem) {
-      if (token !== epoch) return;
-      error.textContent =
-        problem.status === 409
-          ? "The saved record changed in another tab. Cancel and reopen this backup or deletion screen to review the latest record. Nothing was replaced."
-          : problem.message;
-      error.hidden = false;
-      error.focus();
+    } catch (error) {
+      if (operation === epoch && dialog) {
+        const target = dialog.querySelector("#recovery-error");
+        target.textContent = error.message;
+        target.tabIndex = -1;
+        target.focus();
+      }
     } finally {
-      working = false;
-      for (const button of buttons)
-        if (button.isConnected) button.disabled = false;
+      if (operation === epoch && dialog) {
+        working = false;
+        for (const control of dialog.querySelectorAll("button,input"))
+          control.disabled = false;
+      }
     }
   }
-  return { openExport, openImport, openDelete, cancel };
+  return { openExport, openImport, openDelete };
 }

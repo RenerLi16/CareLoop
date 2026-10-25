@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "An account-free bedside care planner with on-device storage",
+  "description": "CareLoop blue app with local care records and automatic scheduling",
   "engines": {
     "node": ">=22.13"
   },
@@ -11,12 +11,13 @@
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
     "test": "node --test tests/*.test.js",
-    "format": "prettier --write src public tests scripts package.json README.md PRIVACY.md .github",
-    "format:check": "prettier --check src public tests scripts package.json README.md PRIVACY.md .github",
     "test:browser": "node tests/browser.mjs",
     "build": "node scripts/build.mjs",
-    "test:offline": "node tests/offline-browser.mjs",
-    "test:recovery": "node tests/recovery-browser.mjs"
+    "format": "prettier --write src public tests scripts package.json README.md",
+    "format:check": "prettier --check src public tests scripts package.json README.md",
+    "test:release": "node tests/release-browser.mjs",
+    "test:records": "node tests/records-browser.mjs",
+    "test:upgrade": "node tests/upgrade-browser.mjs"
   },
   "devDependencies": {
     "prettier": "^3.6.2"
