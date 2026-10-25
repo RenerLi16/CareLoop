@@ -50,6 +50,12 @@ STATIC_DIR=dist npm start
 
 Patient records stay in the browser. Different browsers, addresses, and devices do not share a record. Browser storage behavior for local files varies, so use the same browser and address consistently. Check the final HTTPS address on the intended tablet before release.
 
+## Interface language and schedule labels
+
+The upper-right selector switches the interface between English, Vietnamese, Spanish, Simplified Chinese, and Korean. The preference stays in this browser, separate from care records. Patient names, medicine names, notes, and discharge instructions stay as entered; the instruction reader still accepts structured English. Translations are bundled locally and work offline.
+
+Daily Schedule labels each medicine and time above or below its point. Nearby labels use additional rows rather than overlapping, including medicines at the same time. On phones, swipe the timeline horizontally to see the full day.
+
 ## Scheduling
 
 Compile schedule and Auto-resolve schedule search for times satisfying the supported instructions. They preserve doses and prescribed rules, explain moved times, and block saving if a solution is not found.
@@ -62,7 +68,7 @@ Compile schedule and Auto-resolve schedule search for times satisfying the suppo
 - Rebuilding preserves records. Changes around a medicine already recorded today require review rather than automatic dose compensation.
 - Try a conflict example is a separate preview and never changes the saved plan.
 
-The reader handles structured English lines. Unsupported wording remains for review. Paragraph understanding, photo reading, translation, calendar export, and remote sharing are not included. Follow-ups represent booking deadlines.
+The reader handles structured English lines. Unsupported wording remains for review. Paragraph understanding, photo reading, translation of entered care instructions, calendar export, and remote sharing are not included. Follow-ups represent booking deadlines.
 
 ## Records and backups
 
@@ -87,6 +93,7 @@ npm run test:release
 npm run test:records
 npm run test:upgrade
 npm run test:mobile
+npm run test:language
 npm run format:check
 ```
 

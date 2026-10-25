@@ -979,3 +979,167 @@ select {
 .mono {
   font-variant-numeric: tabular-nums;
 }
+
+/* Language preference is separate from the patient's saved care record. */
+header {
+  position: relative;
+  padding-right: 225px;
+  min-height: 68px;
+}
+header #hdrPat {
+  margin-left: auto;
+}
+.language-control {
+  position: absolute;
+  top: 16px;
+  right: 24px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  color: white;
+}
+.language-control select {
+  width: auto;
+  max-width: 148px;
+  min-height: 36px;
+  padding: 6px 9px;
+  color: white;
+  background: #234563;
+  border-color: #ffffff55;
+  font-family: inherit;
+}
+.language-control option {
+  background: white;
+  color: var(--ink);
+}
+.language-note {
+  border-left: 3px solid var(--accent);
+  padding: 10px 12px;
+  background: #eef5f4;
+}
+.tl {
+  min-height: 220px;
+}
+.timeline-axis {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: var(--line);
+}
+.tl .pin {
+  top: 0;
+  width: 0;
+  height: 100%;
+  transform: none;
+}
+.tl .pin .dot {
+  position: absolute;
+  left: -5.5px;
+  margin: 0;
+}
+.tl .pin .lb {
+  position: absolute;
+  margin: 0;
+  padding: 6px 8px;
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  white-space: normal;
+  font-size: 12px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  box-sizing: border-box;
+}
+.tl .pin .lb b {
+  display: block;
+  font-size: 11px;
+  margin-bottom: 2px;
+  font-variant-numeric: tabular-nums;
+}
+.tl .pin .lb span {
+  display: block;
+}
+.pin-stem {
+  position: absolute;
+  width: 1px;
+  left: 0;
+  background: #aab9c7;
+}
+.tl .hourlbl {
+  bottom: 6px;
+}
+.tl .hourlbl:first-of-type {
+  transform: none;
+}
+@media (max-width: 900px) {
+  header {
+    padding-right: 176px;
+    min-height: 86px;
+  }
+  header #hdrPat {
+    font-size: 11px !important;
+  }
+  .language-control {
+    position: absolute;
+    right: 16px;
+    top: 16px;
+  }
+  .language-caption {
+    display: none;
+  }
+  .language-control select {
+    font-size: 14px;
+    min-height: 40px;
+    max-width: 140px;
+  }
+  .timeline-scroll {
+    padding: 0 10px 10px;
+  }
+  .tl {
+    margin-bottom: 10px;
+  }
+}
+@media (max-width: 380px) {
+  header {
+    padding-right: 144px;
+  }
+  .language-control {
+    right: 12px;
+  }
+  .language-control select {
+    max-width: 124px;
+  }
+}
+
+.timeline-hint {
+  display: none;
+}
+.tl .hourlbl[data-hour="0"] {
+  transform: none;
+}
+.tl .hourlbl[data-hour="24"] {
+  transform: translateX(-100%);
+}
+@media (max-width: 900px) {
+  header #hdrPat {
+    flex: 0 0 auto;
+    width: calc(100vw - 32px);
+    max-width: calc(100vw - 32px);
+  }
+  .timeline-hint {
+    display: block;
+    margin: 0 0 8px;
+  }
+}
+/* Let label backgrounds cover stems from nearby or simultaneous points. */
+.tl .pin .lb {
+  z-index: 2;
+}
+.tl .pin .dot {
+  z-index: 3;
+}
+.pin-stem {
+  z-index: 1;
+}

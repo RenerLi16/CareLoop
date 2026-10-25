@@ -24,6 +24,8 @@ const bundled = [
   "src/record-store.js",
   "src/file-protection.js",
   "public/recovery.js",
+  "public/i18n.js",
+  "public/timeline.js",
   "public/app.js",
 ]
   .map((file) => withoutImports(read(file)))

@@ -14,6 +14,16 @@
         style="margin-left: auto; font-size: 12px; opacity: 0.85"
         id="hdrPat"
       ></span>
+      <label class="language-control"
+        ><span class="language-caption">Language</span
+        ><select id="languageSelect" aria-label="Interface language">
+          <option value="en">English</option>
+          <option value="vi">Tiếng Việt</option>
+          <option value="es">Español</option>
+          <option value="zh">中文</option>
+          <option value="ko">한국어</option>
+        </select></label
+      >
     </header>
 
     <nav aria-label="Main navigation">
@@ -70,6 +80,10 @@
 
       <section class="panel" id="p-import">
         <h2>Read discharge instructions</h2>
+        <p class="small language-note" id="languageNote" hidden>
+          Language changes the interface only. Keep medicine names and discharge
+          instructions as written. The reader accepts English instructions.
+        </p>
         <p class="sub">
           Paste the English summary. The reader pulls out drugs and, more
           importantly, the timing rules buried in the sentences — every field
@@ -123,6 +137,8 @@
                   <option value="en">English</option>
                   <option value="es">Español</option>
                   <option value="vi">Tiếng Việt</option>
+                  <option value="zh">中文</option>
+                  <option value="ko">한국어</option>
                 </select>
               </div>
             </div>
@@ -322,8 +338,8 @@
             <tr>
               <td><b>Keep the family’s record</b></td>
               <td>
-                Caregiver labels and task status on this device; translation and
-                remote sharing are not included
+                Caregiver labels and task status on this device; remote sharing
+                is not included
               </td>
             </tr>
           </table>

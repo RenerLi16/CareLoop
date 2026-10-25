@@ -13,6 +13,8 @@ export const ASSETS = {
     "font/woff2",
   ],
   "/Manrope-OFL.txt": ["public/Manrope-OFL.txt", "text/plain; charset=utf-8"],
+  "/i18n.js": ["public/i18n.js", "text/javascript; charset=utf-8"],
+  "/timeline.js": ["public/timeline.js", "text/javascript; charset=utf-8"],
   "/app.js": ["public/app.js", "text/javascript; charset=utf-8"],
   "/scheduler.js": ["src/scheduler.js", "text/javascript; charset=utf-8"],
   "/instructions.js": ["src/instructions.js", "text/javascript; charset=utf-8"],

@@ -27,6 +27,8 @@ test("release build removes old files, includes the full website, and versions o
       "src/record-store.js",
       "src/file-protection.js",
       "public/recovery.js",
+      "public/i18n.js",
+      "public/timeline.js",
       "public/app.js",
       "public/index.html",
       "public/style.css",

@@ -15,7 +15,7 @@ export function createRecovery({ snapshot, replace, notify, afterChange }) {
     working = false,
     epoch = 0;
   const summary = (record) =>
-    `<dl class="backup-summary"><dt>Patient</dt><dd>${escape(record.patient?.name || "No plan")}</dd><dt>Tasks</dt><dd>${record.tasks.length}</dd><dt>Recorded</dt><dd>${record.tasks.filter((t) => t.status !== "todo").length}</dd><dt>Caregivers</dt><dd>${record.team.filter((p) => !p.archived).length}</dd></dl>`;
+    `<dl class="backup-summary"><dt>Patient</dt><dd data-no-translate>${escape(record.patient?.name || "No plan")}</dd><dt>Tasks</dt><dd>${record.tasks.length}</dd><dt>Recorded</dt><dd>${record.tasks.filter((t) => t.status !== "todo").length}</dd><dt>Caregivers</dt><dd>${record.team.filter((p) => !p.archived).length}</dd></dl>`;
   const controls = (label) =>
     `<p id="recovery-error" role="alert"></p><div class="dialog-actions"><button class="act" type="submit">${label}</button><button class="ghost" type="button" data-recovery="cancel">Cancel</button></div>`;
   const pass = (label, name) =>

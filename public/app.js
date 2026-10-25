@@ -1,3 +1,5 @@
+import { observeMedicineTimeline } from "/timeline.js";
+import { createLanguageControl, translateInterfaceText } from "/i18n.js";
 import {
   autoResolve,
   checkTimes,
@@ -80,7 +82,7 @@ function resolutionHTML(schedule) {
       .map((v) => `<div class="banner"><b>Not saved.</b> ${esc(v.msg)}</div>`)
       .join("");
   return schedule.adjustments.length
-    ? `<div class="banner green"><b>Automatically resolved</b>${schedule.adjustments.map((a) => `<div>${esc(a.drug)}: ${esc(a.before.join(", "))} → <b>${esc(a.after.join(", "))}</b> · ${esc(a.reason)}</div>`).join("")}</div>`
+    ? `<div class="banner green"><b>Automatically resolved</b>${schedule.adjustments.map((a) => `<div>${esc(a.drug)}: ${esc(a.before.join(", "))} → <b>${esc(a.after.join(", "))}</b> · <span>${esc(a.reason)}</span></div>`).join("")}</div>`
     : '<div class="small">The entered timing rules fit. No changes needed.</div>';
 }
 function generateTasks(state, days = 30) {
@@ -412,7 +414,12 @@ const recovery = createRecovery({
 
 async function seed() {
   if (busy) return false;
-  if (S.patient && !confirm("Replace this plan with the fictional sample?"))
+  if (
+    S.patient &&
+    !confirm(
+      translateInterfaceText("Replace this plan with the fictional sample?"),
+    )
+  )
     return false;
   const parsed = parseLocal(SAMPLE_TEXT),
     candidate = emptyRecord();
@@ -458,7 +465,9 @@ function renderHome() {
   warnings.hidden = !S.patient || !S.flags.length;
   warnings.innerHTML = S.flags.length
     ? "<b>From the discharge instructions</b>" +
-      S.flags.map((flag) => `<div>${esc(flag)}</div>`).join("")
+      S.flags
+        .map((flag) => `<div data-no-translate>${esc(flag)}</div>`)
+        .join("")
     : "";
   $("#hdrPat").textContent = S.patient
     ? `${S.patient.name} · ${S.patient.age} · discharged ${S.patient.dischargeDate}`
@@ -582,24 +591,31 @@ function renderSchedule() {
     ]),
   );
 
-  const pins = [];
-  Object.entries(displayTimes).forEach(([medId, ts]) => {
-    ts.forEach((t) => {
-      const left = ((toMin(t) / 1440) * 100).toFixed(2);
-      pins.push(`<div class="pin ${bad[medId] ? "bad" : ""}" style="left:${left}%">
-        <div class="dot"></div><div class="lb">${t}</div></div>`);
-    });
-  });
+  const points = S.meds
+    .flatMap((med) =>
+      (displayTimes[med.id] || []).map((time) => ({ med, time })),
+    )
+    .sort(
+      (a, b) =>
+        a.time.localeCompare(b.time) || a.med.drug.localeCompare(b.med.drug),
+    );
+  const pins = points.map(
+    ({
+      med,
+      time,
+    }) => `<div class="pin ${bad[med.id] ? "bad" : ""}" data-minute="${toMin(time)}">
+    <div class="pin-stem"></div><div class="dot"></div><div class="lb" data-no-translate><b>${esc(time)}</b><span>${esc(med.drug)}</span></div></div>`,
+  );
   let lbl = "";
   [0, 6, 12, 18, 24].forEach((h) => {
-    lbl += `<div class="hourlbl" style="left:${((h / 24) * 100).toFixed(2)}%">${String(h).padStart(2, "0")}</div>`;
+    lbl += `<div class="hourlbl" data-hour="${h}" style="left:${((h / 24) * 100).toFixed(2)}%">${String(h).padStart(2, "0")}</div>`;
   });
 
   const rows = S.meds
     .map((m) => {
       const ts = (displayTimes[m.id] || []).join(", ") || "—";
       return `<tr class="${bad[m.id] ? "conflict" : ""}">
-      <td><b>${esc(m.drug)}</b><div class="small">${esc(m.dose)}</div></td>
+      <td data-no-translate><b>${esc(m.drug)}</b><div class="small">${esc(m.dose)}</div></td>
       <td>${esc(m.freq)}</td>
       <td>${m.meal === "with" ? "with food" : m.meal === "before" ? "before food" : m.meal === "after" ? "after food" : "—"}</td>
       <td>${m.gapH ? esc(m.gapH) + " h from " + esc(m.gapTarget || "all others") : "—"}</td>
@@ -609,7 +625,7 @@ function renderSchedule() {
 
   const viol = S.schedule.violations || [];
   host.innerHTML = `
-    <div class="timeline-scroll"><div class="tl">${lbl}${pins.join("")}</div></div>
+    <p class="small timeline-hint">Swipe across the timeline to see the full day →</p><div class="timeline-scroll"><div class="tl" role="img" aria-label="Medication schedule by time"><div class="timeline-axis"></div>${lbl}${pins.join("")}</div></div>
     <div class="small" style="margin:8px 0 12px">
       Schedule for ${esc(scheduleDate)}.
       ${viol.length ? '<b style="color:#b3261e">Red pins break a rule.</b>' : "Supported rules satisfied."}</div>
@@ -628,6 +644,8 @@ function renderSchedule() {
       </div>
       <div class="small" id="recompMsg" style="margin-top:8px"></div>
     </div>`;
+
+  observeMedicineTimeline(host.querySelector(".tl"));
 
   $("#btnRecompile").onclick = async () => {
     if (busy) return;
@@ -718,7 +736,7 @@ function renderTasks() {
           const bad = v.some((x) => x.a?.id === t.id || x.b?.id === t.id);
           return `<tr class="${bad ? "conflict" : ""}">
           <td class="mono">${t.time}</td>
-          <td>${esc(t.label)}${t.doneAt != null ? `<div class="small">Recorded ${esc(new Date(t.doneAt).toLocaleString())}${t.recordedByName ? " · " + esc(t.recordedByName) : ""}</div>` : ""}${t.kind === "visit" ? ' <span class="small">(appointment)</span>' : ""}</td>
+          <td data-no-translate>${esc(t.label)}${t.doneAt != null ? `<div class="small">Recorded ${esc(new Date(t.doneAt).toLocaleString())}${t.recordedByName ? " · " + esc(t.recordedByName) : ""}</div>` : ""}${t.kind === "visit" ? ' <span class="small">(appointment)</span>' : ""}</td>
           <td><select data-who="${esc(t.id)}"><option value="" ${!t.who ? "selected" : ""}>Unassigned</option>${S.team
             .filter((person) => !person.archived || person.id === t.who)
             .map(
@@ -781,7 +799,7 @@ function renderTeam() {
     <tbody>${load
       .map(
         (l) => `<tr>
-      <td><b>${esc(l.name)}</b><div class="small">${esc(l.rel)}</div></td>
+      <td data-no-translate><b>${esc(l.name)}</b><div class="small">${esc(l.rel)}</div></td>
       <td><div class="barwrap"><div class="bar" style="width:${Math.round((l.total / max) * 140)}px"></div>
           <span class="small">${l.total}</span></div></td>
       <td>${l.total}</td><td>${l.done}</td><td>${l.rate}%</td><td>${l.activeDays}</td>
@@ -1082,7 +1100,12 @@ $("#backupImport").onchange = (event) => {
     recovery.openImport(file).catch((error) => notify(error.message, true));
 };
 $("#btnReloadPlan").onclick = () => {
-  if (!draftDirty || confirm("Discard this draft and reopen the saved plan?")) {
+  if (
+    !draftDirty ||
+    confirm(
+      translateInterfaceText("Discard this draft and reopen the saved plan?"),
+    )
+  ) {
     synchronize();
     openSavedPlan();
     notify("Saved plan reopened.");
@@ -1123,7 +1146,9 @@ $("#caregiverList").onclick = async (event) => {
   if (
     button.dataset.personRemove &&
     !confirm(
-      "Remove this caregiver? Pending future assignments will become unassigned; recorded names stay in history.",
+      translateInterfaceText(
+        "Remove this caregiver? Pending future assignments will become unassigned; recorded names stay in history.",
+      ),
     )
   )
     return;
@@ -1155,7 +1180,7 @@ function openTask(id, intent = null) {
   dialog.id = "task-dialog";
   dialog.setAttribute("aria-labelledby", "record-title");
   const active = S.team.filter((person) => !person.archived);
-  dialog.innerHTML = `<form id="record-form"><h2 id="record-title">${esc(task.label)}</h2><p class="small">Scheduled ${esc(task.date)} · ${esc(task.time)}</p><label class="field">Status<select name="status"><option value="done">Completed</option><option value="skip">Skipped</option><option value="todo">Pending</option></select></label><label class="field">Recorded by<select name="recordedBy" required><option value="">Choose a name</option>${active.map((person) => `<option value="${esc(person.id)}">${esc(person.name)}</option>`).join("")}</select></label><label class="field" id="actual-field">Actual time (device time)<input name="actualAt" type="datetime-local" required value="${esc(displayTime)}"></label><label class="field" id="clock-choice" hidden>Repeated clock time<select name="occurrence"></select></label><label class="field">${initialStatus === "todo" ? "Note (optional)" : "Reason for correction"}<textarea name="note" rows="2" maxlength="2000">${esc(task.note || "")}</textarea></label>${task.corrections?.length ? `<details><summary>Corrections (${task.corrections.length})</summary>${task.corrections.map((change) => `<p class="small">${esc(new Date(change.at).toLocaleString())} · ${esc(change.by)}: ${esc(change.before.status)} → ${esc(change.after.status)}<br>${esc(change.before.doneAt ? new Date(change.before.doneAt).toLocaleString() : "No recorded time")} → ${esc(change.after.doneAt ? new Date(change.after.doneAt).toLocaleString() : "No recorded time")}<br>${esc(change.reason)}</p>`).join("")}</details>` : ""}<p id="record-error" role="alert"></p><div class="dialog-actions"><button class="act" type="submit">Save record</button><button class="ghost" type="button" data-cancel>Cancel</button></div></form>`;
+  dialog.innerHTML = `<form id="record-form"><h2 id="record-title" data-no-translate>${esc(task.label)}</h2><p class="small">Scheduled ${esc(task.date)} · ${esc(task.time)}</p><label class="field">Status<select name="status"><option value="done">Completed</option><option value="skip">Skipped</option><option value="todo">Pending</option></select></label><label class="field">Recorded by<select name="recordedBy" required><option value="">Choose a name</option>${active.map((person) => `<option value="${esc(person.id)}">${esc(person.name)}</option>`).join("")}</select></label><label class="field" id="actual-field">Actual time (device time)<input name="actualAt" type="datetime-local" required value="${esc(displayTime)}"></label><label class="field" id="clock-choice" hidden>Repeated clock time<select name="occurrence"></select></label><label class="field">${initialStatus === "todo" ? "Note (optional)" : "Reason for correction"}<textarea name="note" rows="2" maxlength="2000">${esc(task.note || "")}</textarea></label>${task.corrections?.length ? `<details><summary>Corrections (${task.corrections.length})</summary>${task.corrections.map((change) => `<p class="small">${esc(new Date(change.at).toLocaleString())} · ${esc(change.by)}: ${esc(change.before.status)} → ${esc(change.after.status)}<br>${esc(change.before.doneAt ? new Date(change.before.doneAt).toLocaleString() : "No recorded time")} → ${esc(change.after.doneAt ? new Date(change.after.doneAt).toLocaleString() : "No recorded time")}<br><span data-no-translate>${esc(change.reason)}</span></p>`).join("")}</details>` : ""}<p id="record-error" role="alert"></p><div class="dialog-actions"><button class="act" type="submit">Save record</button><button class="ghost" type="button" data-cancel>Cancel</button></div></form>`;
   document.body.append(dialog);
   const form = dialog.querySelector("form");
   form.elements.status.value =
@@ -1321,3 +1346,5 @@ window.addEventListener("focus", refreshClock);
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden) refreshClock();
 });
+
+createLanguageControl();
