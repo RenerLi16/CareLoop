@@ -77,7 +77,7 @@ try {
     }
   }
   await page.setViewportSize({ width: 390, height: 844 });
-  for (const id of ["home", "schedule", "tasks", "import"]) {
+  for (const id of ["home", "schedule", "tasks", "import", "team"]) {
     await page.locator(`nav [data-t="${id}"]`).click();
     await page.evaluate(() => window.scrollTo(0, 0));
     await page.screenshot({

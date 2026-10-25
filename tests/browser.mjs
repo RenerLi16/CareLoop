@@ -44,6 +44,16 @@ try {
   });
   await page.clock.install({ time: new Date("2026-10-25T12:00:00") });
   await page.goto(url);
+  assert.ok(
+    await page.evaluate(
+      async () => (await document.fonts.load('600 15px "Manrope"')).length > 0,
+    ),
+    "Bundled interface font loads",
+  );
+  assert.doesNotMatch(
+    await page.locator("#p-team").textContent(),
+    /923 surveyed|Burden stays invisible/,
+  );
   assert.equal(
     (await page.request.post(url, { data: "fictional test" })).status(),
     405,
@@ -241,6 +251,12 @@ try {
   );
   await standalone.goto(new URL("../dist/careloop.html", import.meta.url).href);
   assert.equal(await standalone.locator("nav button").count(), 6);
+  assert.ok(
+    await standalone.evaluate(
+      async () => (await document.fonts.load('600 15px "Manrope"')).length > 0,
+    ),
+    "Standalone font loads without a network request",
+  );
   assert.equal(
     await standalone.locator('link[rel="stylesheet"], script[src]').count(),
     0,

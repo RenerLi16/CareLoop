@@ -17,6 +17,8 @@ Open http://127.0.0.1:3000/. Close tabs running an older CareLoop version before
 
 On screens up to 900px wide, the original six tabs stay fixed along the bottom. Tables scroll within their own area when needed, with the first column pinned and a swipe hint. Form controls use larger text and touch targets. Desktop keeps the original top navigation.
 
+The interface uses a locally bundled Manrope variable font (SIL Open Font License in `public/Manrope-OFL.txt`). The build embeds the font in the standalone copy so typography also works offline.
+
 ## Folder guide
 
 | Folder     | Contents                                                                    |

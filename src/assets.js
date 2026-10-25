@@ -7,6 +7,12 @@ export const ASSETS = {
   "/": ["public/index.html", "text/html; charset=utf-8"],
   "/index.html": ["public/index.html", "text/html; charset=utf-8"],
   "/style.css": ["public/style.css", "text/css; charset=utf-8"],
+  "/manrope-latin.woff2": ["public/manrope-latin.woff2", "font/woff2"],
+  "/manrope-vietnamese.woff2": [
+    "public/manrope-vietnamese.woff2",
+    "font/woff2",
+  ],
+  "/Manrope-OFL.txt": ["public/Manrope-OFL.txt", "text/plain; charset=utf-8"],
   "/app.js": ["public/app.js", "text/javascript; charset=utf-8"],
   "/scheduler.js": ["src/scheduler.js", "text/javascript; charset=utf-8"],
   "/instructions.js": ["src/instructions.js", "text/javascript; charset=utf-8"],

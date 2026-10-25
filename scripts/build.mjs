@@ -28,10 +28,15 @@ const bundled = [
 ]
   .map((file) => withoutImports(read(file)))
   .join("\n");
+const inlineStyles = read("public/style.css").replace(
+  /url\("(\/manrope-[a-z]+\.woff2)"\)/g,
+  (_, route) =>
+    `url("data:font/woff2;base64,${sourceAsset(route).toString("base64")}")`,
+);
 const standalone = read("public/index.html")
   .replace(
     /<link rel="stylesheet" href="\/style\.css"\s*\/?>/,
-    () => `<style>${read("public/style.css")}</style>`,
+    () => `<style>${inlineStyles}</style>`,
   )
   .replace(
     '<script type="module" src="/app.js"></script>',

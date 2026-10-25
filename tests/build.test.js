@@ -30,6 +30,9 @@ test("release build removes old files, includes the full website, and versions o
       "public/app.js",
       "public/index.html",
       "public/style.css",
+      "public/manrope-latin.woff2",
+      "public/manrope-vietnamese.woff2",
+      "public/Manrope-OFL.txt",
       "public/sw.js",
     ]) {
       mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
@@ -66,6 +69,12 @@ test("release build removes old files, includes the full website, and versions o
     assert.ok(!standalone.includes('src="/app.js"'));
     assert.ok(!/^import /m.test(standalone));
     assert.ok(standalone.includes("function parseInstructions"));
+    assert.ok(standalone.includes("data:font/woff2;base64,"));
+    assert.ok(!standalone.includes('url("/manrope-'));
+    assert.deepEqual(
+      readFileSync(path.join(root, "dist/manrope-latin.woff2")),
+      readFileSync(path.join(source, "public/manrope-latin.woff2")),
+    );
     writeFileSync(path.join(root, "public/style.css"), "body{color:black}");
     result = spawnSync(process.execPath, ["scripts/build.mjs"], { cwd: root });
     assert.equal(result.status, 0);
