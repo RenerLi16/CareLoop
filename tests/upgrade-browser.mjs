@@ -1,3 +1,4 @@
+import { clickTab, buildAndSave } from "./ui-helpers.mjs";
 import assert from "node:assert/strict";
 import http from "node:http";
 import { once } from "node:events";
@@ -103,7 +104,7 @@ try {
   assert.equal(await other.locator("h1").innerText(), "Old green app");
   await page.reload();
   assert.equal(await page.locator("nav button").count(), 6);
-  assert.equal(await page.title(), "CareLoop — Discharge-to-Routine Compiler");
+  assert.equal(await page.title(), "CareLoop — Your care plan at home");
   const preserved = await page.evaluate(async () => {
     const db = await new Promise((resolve) => {
       const request = indexedDB.open("careloop-bedside");
@@ -136,7 +137,7 @@ try {
   await context.setOffline(false);
 
   // Subsequent blue updates must wait while an entry form is open.
-  await page.locator('nav [data-t="import"]').click();
+  await clickTab(page, "import");
   await page.locator("#rawText").fill("Unsaved fictional draft");
   phase = "next";
   await page.evaluate(async () => {

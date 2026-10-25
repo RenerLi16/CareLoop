@@ -1,3 +1,4 @@
+import { clickTab, buildAndSave } from "./ui-helpers.mjs";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { readFileSync, mkdirSync } from "node:fs";
@@ -14,7 +15,6 @@ const key = "careloop_instructor_resolver_v1",
   pass = "fictional backup passphrase";
 const snapshot = (page) =>
   page.evaluate((key) => JSON.parse(localStorage.getItem(key)), key);
-const clickTab = (page, id) => page.locator(`nav [data-t="${id}"]`).click();
 async function addPerson(page, name) {
   await clickTab(page, "team");
   const details = page.locator("#caregiverAdd").locator("..");
@@ -87,7 +87,7 @@ try {
   await page.locator("#btnParse").click();
   await page.locator("#fWeigh").uncheck();
   await page.locator("#fSymptoms").uncheck();
-  await page.locator("#btnGenerate").click();
+  await buildAndSave(page);
   await page.locator("#p-schedule.on").waitFor();
   await addPerson(page, "Lan");
   await addPerson(page, "Minh");
@@ -99,7 +99,7 @@ try {
       (t) => t.date === "2026-10-25" && t.label.startsWith("Beta"),
     );
   await clickTab(page, "tasks");
-  await page.locator(`[data-done="${alpha.id}"]`).click();
+  await page.locator(`#taskList [data-done="${alpha.id}"]`).click();
   await saveDialog(page, { time: "2026-10-25T08:00" });
   await page.locator("#task-dialog").waitFor({ state: "detached" });
   state = await snapshot(page);
@@ -113,14 +113,14 @@ try {
   );
   const firstTime = state.tasks.find((t) => t.id === alpha.id).doneAt;
   await page.clock.fastForward(60000);
-  await page.locator(`[data-edit="${alpha.id}"]`).click();
+  await page.locator(`#taskList [data-edit="${alpha.id}"]`).click();
   await saveDialog(page);
   await page.locator("#task-dialog").waitFor({ state: "detached" });
   assert.equal(
     (await snapshot(page)).tasks.find((t) => t.id === alpha.id).doneAt,
     firstTime,
   );
-  await page.locator(`[data-edit="${alpha.id}"]`).click();
+  await page.locator(`#taskList [data-edit="${alpha.id}"]`).click();
   await saveDialog(page, { time: "2026-10-25T08:15" });
   assert.match(await page.locator("#record-error").innerText(), /reason/);
   assert.equal(
@@ -139,19 +139,23 @@ try {
     (t) => t.date === "2026-10-26" && t.label.startsWith("Alpha"),
   );
   const beforeFuture = await snapshot(page);
-  await page.locator(`[data-done="${future.id}"]`).click();
-  await saveDialog(page);
-  assert.match(await page.locator("#record-error").innerText(), /future day/);
+  assert.equal(
+    await page.locator(`#taskList [data-done="${future.id}"]`).count(),
+    0,
+  );
+  assert.match(
+    await page.locator(`#taskList [data-task="${future.id}"]`).innerText(),
+    /Available on this date/,
+  );
   assert.deepEqual(await snapshot(page), beforeFuture);
-  await page.locator("#task-dialog [data-cancel]").click();
   // A stale recording form cannot erase another tab's completed task.
   await page.locator("#dayFilter").selectOption("2026-10-25");
-  await page.locator(`[data-edit="${alpha.id}"]`).click();
+  await page.locator(`#taskList [data-edit="${alpha.id}"]`).click();
   const other = await context.newPage();
   await other.clock.install({ time: new Date("2026-10-25T19:00:00Z") });
   await other.goto(url);
   await clickTab(other, "tasks");
-  await other.locator(`[data-done="${beta.id}"]`).click();
+  await other.locator(`#taskList [data-done="${beta.id}"]`).click();
   await saveDialog(other, { name: "Minh", time: "2026-10-25T10:00" });
   await other.locator("#task-dialog").waitFor({ state: "detached" });
   await saveDialog(page, {
@@ -180,7 +184,7 @@ try {
   await clickTab(page, "import");
   assert.equal(await page.locator("#fName").inputValue(), "Unsaved draft");
   await addPerson(other, "Amy");
-  await page.locator("#btnGenerate").click();
+  await buildAndSave(page);
   assert.match(await page.locator("#saveStatus").innerText(), /Another tab/);
   assert.equal(await page.locator("#fName").inputValue(), "Unsaved draft");
   assert.equal((await snapshot(page)).patient.name, "Fictional Record Test");
@@ -325,7 +329,7 @@ try {
   const repeated = (await snapshot(fresh)).tasks.find(
     (t) => t.date === "2026-11-01" && t.label.startsWith("Alpha"),
   );
-  await fresh.locator(`[data-done="${repeated.id}"]`).click();
+  await fresh.locator(`#taskList [data-done="${repeated.id}"]`).click();
   await fresh
     .locator('#record-form [name="recordedBy"]')
     .selectOption({ label: "Me" });
@@ -360,7 +364,7 @@ try {
   await fresh.setViewportSize({ width: 390, height: 844 });
   await clickTab(fresh, "tasks");
   await fresh.locator("#dayFilter").selectOption("2026-11-01");
-  await fresh.locator(`[data-edit="${repeated.id}"]`).click();
+  await fresh.locator(`#taskList [data-edit="${repeated.id}"]`).click();
   await fresh.screenshot({
     path: "test-results/record-dialog-phone.png",
     fullPage: true,

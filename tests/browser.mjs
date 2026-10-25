@@ -1,3 +1,4 @@
+import { clickTab, buildAndSave } from "./ui-helpers.mjs";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { mkdirSync } from "node:fs";
@@ -50,9 +51,7 @@ try {
   );
   assert.equal((await page.request.get(url + "/package.json")).status(), 404);
   assert.equal(await page.locator("nav button").count(), 6);
-  await page
-    .getByRole("button", { name: "Read Discharge", exact: true })
-    .click();
+  await clickTab(page, "import");
   await page
     .locator("#rawText")
     .fill("MEDICATIONS\nCannot recognize this tablet");
@@ -75,7 +74,7 @@ try {
   );
   if (await page.locator("#ackUnread").count())
     await page.locator("#ackUnread").check();
-  await page.locator("#btnGenerate").click();
+  await buildAndSave(page);
   await page.locator("#p-schedule.on").waitFor();
   const state = () =>
     page.evaluate(() =>
@@ -93,6 +92,7 @@ try {
     /Lisinopril|Metoprolol/,
   );
   const firstTimes = structuredClone(saved.schedule.times);
+  await page.locator(".example-tools summary").click();
   await page.locator("#btnTestMove").click();
   assert.match(
     await page.locator("#recompMsg").innerText(),
@@ -104,7 +104,7 @@ try {
     path: "test-results/restart-daily.png",
     fullPage: true,
   });
-  await page.getByRole("button", { name: "30-Day Plan", exact: true }).click();
+  await clickTab(page, "tasks");
   const dates = await page
     .locator("#dayFilter option")
     .evaluateAll((options) => options.map((o) => o.value));
@@ -118,18 +118,14 @@ try {
   await finishRecord(page);
   const completed = (await state()).tasks.find((t) => t.id === doneId);
   assert.equal(completed.status, "done");
-  await page
-    .getByRole("button", { name: "Daily Schedule", exact: true })
-    .click();
+  await clickTab(page, "schedule");
   await page.locator("#btnRecompile").click();
   assert.deepEqual(
     (await state()).tasks.find((t) => t.id === doneId),
     completed,
   );
   // Impossible fixed-time rule set: no draft data can replace the saved plan.
-  await page
-    .getByRole("button", { name: "Read Discharge", exact: true })
-    .click();
+  await clickTab(page, "import");
   await page.locator("#btnManual").click();
   await page.locator("#fName").fill("Fictional conflict test");
   await page.locator(".mDrug").first().fill("A");
@@ -142,7 +138,7 @@ try {
   await page.locator(".mTarget").nth(1).fill("A");
   await page.locator(".mGap").nth(1).fill("2");
   const before = await state();
-  await page.locator("#btnGenerate").click();
+  await buildAndSave(page);
   assert.match(
     await page.locator("#genStatus").innerText(),
     /Not saved|No schedule/,
@@ -151,7 +147,7 @@ try {
   // A revised timetable cannot move around a dose already recorded today.
 
   await page.locator(".mFreq").nth(1).selectOption("once daily");
-  await page.locator("#btnGenerate").click();
+  await buildAndSave(page);
   assert.match(
     await page.locator("#genStatus").innerText(),
     /already recorded today/,
@@ -159,22 +155,20 @@ try {
   assert.deepEqual(await state(), before);
   // Changes can be reviewed before the following day's first recorded dose.
   await page.clock.setFixedTime(new Date("2026-10-26T07:00:00"));
-  await page.locator("#btnGenerate").click();
+  await buildAndSave(page);
   await page.locator("#p-schedule.on").waitFor();
   saved = await state();
   assert.equal(saved.patient.name, "Fictional conflict test");
   assert.equal(saved.schedule.ok, true);
   assert.ok(saved.history.some((t) => t.id === doneId));
   // Malicious input remains text in both editable fields and table cells.
-  await page
-    .getByRole("button", { name: "Read Discharge", exact: true })
-    .click();
+  await clickTab(page, "import");
   await page.locator("#btnManual").click();
   await page.locator("#fName").fill("Fictional escape test");
   await page.locator(".mDrug").fill('<img src=x onerror="window.injected=1">');
   await page.locator(".mDose").fill("10 mg");
   await page.locator(".mFreq").selectOption("once daily");
-  await page.locator("#btnGenerate").click();
+  await buildAndSave(page);
   await page.locator("#p-schedule.on").waitFor();
   assert.equal(await page.evaluate(() => window.injected), undefined);
   assert.equal(await page.locator("#scheduleBody img").count(), 0);
@@ -183,7 +177,7 @@ try {
   for (const width of [768, 390, 320]) {
     await page.setViewportSize({ width, height: 900 });
     for (const id of ["home", "import", "schedule", "tasks", "team", "about"]) {
-      await page.locator(`nav [data-t="${id}"]`).click();
+      await clickTab(page, id);
       assert.equal(
         await page.evaluate(
           () => document.documentElement.scrollWidth > innerWidth,
@@ -199,7 +193,7 @@ try {
   });
   // A failed write is visible and cannot replace the last saved record.
   await page.setViewportSize({ width: 1440, height: 1000 });
-  await page.locator('nav [data-t="home"]').click();
+  await clickTab(page, "home");
   const beforeFailure = await state();
   await page.evaluate(() => {
     window.originalSetItem = Storage.prototype.setItem;
@@ -245,12 +239,12 @@ try {
     await standalone.locator('link[rel="stylesheet"], script[src]').count(),
     0,
   );
-  await standalone.locator('nav [data-t="import"]').click();
+  await clickTab(standalone, "import");
   await standalone.locator("#btnDemo").click();
   await standalone.locator("#btnParse").click();
   if (await standalone.locator("#ackUnread").count())
     await standalone.locator("#ackUnread").check();
-  await standalone.locator("#btnGenerate").click();
+  await buildAndSave(standalone);
   await standalone.locator("#p-schedule.on").waitFor();
   assert.match(
     await standalone.locator("#scheduleBody").innerText(),
@@ -259,7 +253,7 @@ try {
   await standalone.close();
   assert.deepEqual(errors, []);
   console.log(
-    "Browser checks passed: original six-tab UI, parser review, automatic resolution/explanations, immutable conflict example, working date filter, preserved records, blocked impossible plan, escaped input, reload and responsive layouts.",
+    "Browser checks passed: simplified navigation and task views, parser review, automatic resolution/explanations, immutable conflict example, working date filter, preserved records, blocked impossible plan, escaped input, reload and responsive layouts.",
   );
 } finally {
   if (browser) await browser.close();
