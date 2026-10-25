@@ -1,3 +1,4 @@
+import { finishFirstVisit } from "./setup-helper.mjs";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import assert from "node:assert/strict";
@@ -28,6 +29,7 @@ try {
   await page.clock.install({ time: new Date("2026-10-25T18:59:55Z") });
   await page.clock.pauseAt(new Date("2026-10-25T19:00:00Z"));
   await page.goto(url);
+  await finishFirstVisit(page, "Fictional Lifecycle");
   await page.locator('nav [data-t="import"]').click();
   await page
     .locator("#rawText")
@@ -51,7 +53,8 @@ try {
   assert.equal(await page.locator(".overdue-card").count(), 0);
   assert.match(await page.locator("#nextTitle").innerText(), /14:00/);
   await page.clock.fastForward(2 * 3600000);
-  await page.locator("#btnNextDone").click();
+  await page.locator('nav [data-t="schedule"]').click();
+  await page.locator(`[data-chart-task="${first.id}"]`).click();
   await page
     .locator('#record-form [name="recordedBy"]')
     .selectOption({ label: "Me" });
@@ -61,6 +64,7 @@ try {
     (await snapshot()).tasks.find((task) => task.id === first.id).status,
     "done",
   );
+  await page.locator('nav [data-t="home"]').click();
   await page.clock.fastForward(24 * 3600000);
   assert.equal(
     (await snapshot()).tasks.find((task) => task.id === expiredTarget.id)

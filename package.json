@@ -18,6 +18,7 @@
     "test:release": "node tests/release-browser.mjs",
     "test:records": "node tests/records-browser.mjs",
     "test:upgrade": "node tests/upgrade-browser.mjs",
+    "test:setup": "node tests/setup-browser.mjs",
     "test:lifecycle": "node tests/task-lifecycle-browser.mjs",
     "test:live": "node tests/live-schedule-browser.mjs",
     "test:mobile": "node tests/mobile-browser.mjs",

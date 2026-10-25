@@ -1,3 +1,4 @@
+import { finishFirstVisit } from "./setup-helper.mjs";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { mkdirSync } from "node:fs";
@@ -66,6 +67,7 @@ try {
   page.on("pageerror", (e) => errors.push(e.message));
   await page.clock.install({ time: new Date("2026-10-25T12:00:00") });
   await page.goto(url);
+  await finishFirstVisit(page);
   await page.locator("#btnEmptySample").click();
   await page.locator("#nextCard").waitFor({ state: "visible" });
   const snapshot = () =>
@@ -123,16 +125,13 @@ try {
     );
     const date = document.querySelector("#scheduleDate").value;
     return state.tasks.filter(
-      (task) =>
-        task.kind === "med" &&
-        task.date === date &&
-        task.status !== "discarded",
+      (task) => task.date === date && task.status !== "discarded",
     ).length;
   });
   assert.equal(
     labels.length,
     scheduledCount,
-    "Only doses from the loaded plan appear",
+    "All care events from the loaded plan appear",
   );
   assert.ok(labels.length > 0);
   mkdirSync("test-results", { recursive: true });
@@ -195,12 +194,14 @@ try {
     .locator("#scheduleDate option")
     .evaluateAll((options) => options.map((option) => option.value));
   await page.locator("#scheduleDate").selectOption(days[1]);
-  assert.equal((await checkLabels(page)).length, 6);
+  await checkLabels(page);
+  assert.equal(await page.locator('.medicine-box[data-kind="med"]').count(), 6);
   assert.equal(await page.locator(".medicine-timeline img").count(), 0);
   assert.equal(await page.evaluate(() => window.injected), undefined);
   const standalone = await browser.newPage();
   standalone.on("pageerror", (e) => errors.push(e.message));
   await standalone.goto(new URL("../dist/careloop.html", import.meta.url).href);
+  await finishFirstVisit(standalone);
   await standalone.locator("#languageSelect").selectOption("ko");
   await standalone.waitForFunction(
     () => document.documentElement.lang === "ko",

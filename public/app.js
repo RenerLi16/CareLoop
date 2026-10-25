@@ -1,3 +1,4 @@
+import { createSetupWizard } from "/setup.js";
 import {
   homeQueue,
   taskDue,
@@ -58,6 +59,7 @@ function localISO(d) {
 
 let S = emptyRecord();
 let queueClockTimer;
+let setupWizard;
 
 /* =======================================================================
    1. COMPILER — constraint placement, hand-written
@@ -292,6 +294,8 @@ function notify(message, error = false) {
   const status = $("#saveStatus");
   status.textContent = message;
   status.classList.toggle("error", error);
+  if (document.querySelector("#setup-dialog")?.open)
+    document.querySelector("#setup-error").textContent = error ? message : "";
 }
 function acceptSnapshot(snapshot) {
   S = snapshot.record;
@@ -334,6 +338,7 @@ function synchronize() {
     if (latest.token === lastToken) return;
     acceptSnapshot(latest);
     renderAll();
+    setupWizard?.synchronize();
     if (!S.patient) {
       $("#task-dialog")?.close();
       clearDraft();
@@ -458,7 +463,7 @@ function renderHome() {
     : "";
   $("#hdrPat").textContent = S.patient
     ? `${S.patient.name} · ${S.patient.age} · discharged ${S.patient.dischargeDate}`
-    : "";
+    : S.setup?.patientName || "";
   if (!S.patient) {
     $("#homeSub").textContent = "No plan loaded yet.";
     $("#homeStats").innerHTML = `
@@ -486,6 +491,14 @@ function renderHome() {
       bs.onclick = async () => {
         if (await seed()) renderAll();
       };
+    if (S.setup?.completed) {
+      $("#homeSub").textContent = `Welcome, ${S.setup.patientName}.`;
+      $("#homeStats h3").textContent = "Your space for care is ready.";
+      $("#homeStats p").textContent =
+        "Add discharge instructions when you’re ready to build the schedule. You can add or update your care team at any time.";
+      $("#homeStats ol").remove();
+      bi.textContent = "Add discharge instructions";
+    }
     if (bi)
       bi.onclick = () => {
         document.querySelector('button[data-t="import"]').click();
@@ -610,13 +623,53 @@ function renderSchedule() {
       : dates[0] || localISO(new Date());
   const violations = findLogViolations(S);
   const tasks = S.tasks.filter(
-    (task) =>
-      task.kind === "med" && task.date === date && task.status !== "discarded",
+    (task) => task.date === date && task.status !== "discarded",
   );
+  const dayMeds = S.meds.filter((med) =>
+    tasks.some((task) => task.kind === "med" && task.medId === med.id),
+  );
+  const groups = dayMeds.map((med) => ({
+    kind: "med",
+    medId: med.id,
+    label: med.drug,
+    detail: med.dose,
+    color:
+      medicineColors[
+        S.meds.findIndex((item) => item.id === med.id) % medicineColors.length
+      ],
+  }));
+  for (const group of [
+    {
+      kind: "weight",
+      label: "Weight check",
+      detail: "Daily care",
+      color: "#397f8f",
+    },
+    {
+      kind: "symptom",
+      label: "Symptom check",
+      detail: "Daily care",
+      color: "#8c66c7",
+    },
+    {
+      kind: "visit",
+      label: "Follow-ups",
+      detail: "Appointment",
+      color: "#b4713f",
+    },
+  ])
+    if (tasks.some((task) => task.kind === group.kind)) groups.push(group);
+  const doseCount = tasks.filter((task) => task.kind === "med").length;
   const pins = tasks
     .map((task) => {
-      const medIndex = S.meds.findIndex((med) => med.id === task.medId);
-      const med = S.meds[medIndex];
+      const lane = groups.findIndex(
+        (group) =>
+          group.kind === task.kind &&
+          (task.kind !== "med" || group.medId === task.medId),
+      );
+      const group = groups[lane];
+      if (!group) return "";
+      const title = task.kind === "med" ? group.label : task.label;
       const actual = task.status === "done" && task.doneAt != null;
       const time = actual
         ? new Date(task.doneAt).toLocaleTimeString([], {
@@ -626,10 +679,11 @@ function renderSchedule() {
           })
         : task.time;
       const conflict =
-        violations.some(
+        task.kind === "med" &&
+        (violations.some(
           (item) => item.a?.id === task.id || item.b?.id === task.id,
         ) ||
-        (actual && !timingStatus(S, task, task.doneAt).fits);
+          (actual && !timingStatus(S, task, task.doneAt).fits));
       const label = actual
         ? "Done"
         : task.status === "skip"
@@ -637,13 +691,13 @@ function renderSchedule() {
           : taskDue(task) < Date.now()
             ? "Past due"
             : "Planned";
-      return `<button class="medicine-box ${conflict ? "has-conflict" : ""} ${esc(task.status)}" data-chart-task="${esc(task.id)}" data-minute="${toMin(time)}" data-lane="${medIndex}" style="--medicine-color:${medicineColors[medIndex % medicineColors.length]}" aria-label="${esc(med.drug)} ${esc(time)} ${label}${conflict ? ", timing conflict" : ""}"><b data-no-translate>${esc(med.drug)}</b><span data-no-translate>${esc(med.dose)}</span><span class="medicine-box-status">${esc(time)} · ${label}</span>${actual ? `<small>Target ${esc(task.time)}${localISO(new Date(task.doneAt)) !== date ? " · recorded " + esc(localISO(new Date(task.doneAt))) : ""}</small>` : ""}${conflict ? '<small class="box-conflict">Timing conflict</small>' : ""}</button>`;
+      return `<button class="medicine-box ${conflict ? "has-conflict" : ""} ${esc(task.status)}" data-chart-task="${esc(task.id)}" data-kind="${esc(task.kind)}" data-minute="${toMin(time)}" data-lane="${lane}" style="--medicine-color:${group.color}" aria-label="${esc(title)} ${esc(time)} ${label}${conflict ? ", timing conflict" : ""}"><b ${task.kind === "med" || task.kind === "visit" ? "data-no-translate" : ""}>${esc(title)}</b><span ${task.kind === "med" ? "data-no-translate" : ""}>${esc(group.detail)}</span><span class="medicine-box-status">${esc(time)} · ${label}</span>${actual ? `<small>Target ${esc(task.time)}${localISO(new Date(task.doneAt)) !== date ? " · recorded " + esc(localISO(new Date(task.doneAt))) : ""}</small>` : ""}${conflict ? '<small class="box-conflict">Timing conflict</small>' : ""}</button>`;
     })
     .join("");
-  host.innerHTML = `<div class="schedule-toolbar"><label>Day <select id="scheduleDate">${dates.map((day) => `<option ${day === date ? "selected" : ""}>${esc(day)}</option>`).join("")}</select></label><span class="small">${S.meds.length} medicines · ${tasks.length} doses</span></div>
-    <div class="medicine-legend">${S.meds.map((med, index) => `<span data-no-translate><i style="background:${medicineColors[index % medicineColors.length]}"></i>${esc(med.drug)}</span>`).join("")}</div>
-    <div class="timeline-scroll"><div class="medicine-timeline" data-date="${esc(date)}" style="--lanes:${S.meds.length}" role="group" aria-label="Daily medication timeline">${Array.from({ length: 13 }, (_, i) => `<div class="medicine-hour" style="left:${(i / 12) * 100}%"><span>${String(i * 2).padStart(2, "0")}:00</span></div>`).join("")}${pins}<div class="current-time-line" hidden><span></span></div></div></div>
-    <p class="small chart-caption">Completed doses appear at their recorded time. Click a box to record or edit.</p>
+  host.innerHTML = `<div class="schedule-toolbar"><label>Day <select id="scheduleDate">${(dates.length ? dates : [date]).map((day) => `<option ${day === date ? "selected" : ""}>${esc(day)}</option>`).join("")}</select></label><span class="small">${dayMeds.length} medicines · ${doseCount} doses${tasks.length > doseCount ? ` · ${tasks.length - doseCount} care events` : ""}</span></div>
+    <div class="medicine-legend">${groups.map((group) => `<span ${group.kind === "med" ? "data-no-translate" : ""}><i style="background:${group.color}"></i>${esc(group.label)}</span>`).join("")}</div>
+    <div class="timeline-scroll"><div class="medicine-timeline" data-date="${esc(date)}" style="--lanes:${Math.max(1, groups.length)}" role="group" aria-label="Daily care timeline">${Array.from({ length: 13 }, (_, i) => `<div class="medicine-hour" style="left:${(i / 12) * 100}%"><span>${String(i * 2).padStart(2, "0")}:00</span></div>`).join("")}${pins}<div class="current-time-line" hidden><span></span></div></div></div>
+    <p class="small chart-caption">Completed items appear at their recorded time. Click a box to record or edit.</p>
     <div class="schedule-actions"><button class="act" id="btnRecompile">Auto-resolve schedule</button><span class="small" id="recompMsg" role="status"></span></div>`;
   observeMedicineTimeline(host.querySelector(".medicine-timeline"));
   updateCurrentTime();
@@ -923,7 +977,8 @@ function fillReview(d, scroll = true) {
   if (typeof d.weigh === "boolean") $("#fWeigh").checked = d.weigh;
   if (typeof d.symptoms === "boolean") $("#fSymptoms").checked = d.symptoms;
   $("#fWarnings").value = reviewFlags.join("\n");
-  $("#fName").value = d.patient?.name || "";
+  $("#fName").value =
+    (!S.patient && S.setup?.patientName) || d.patient?.name || "";
   $("#fAge").value = d.patient?.age || "";
   $("#fDate").value = d.patient?.dischargeDate || localISO(new Date());
   $("#fLang").value = d.patient?.lang || "en";
@@ -1060,6 +1115,9 @@ $("#btnGenerate").onclick = async () => {
   }
   const candidate = {
     ...S,
+    setup: setupWizard?.active
+      ? { ...S.setup, step: 3, completed: true, patientName: name }
+      : S.setup,
     planStartAt: draftStartAt,
     patient: {
       name,
@@ -1097,6 +1155,7 @@ $("#btnGenerate").onclick = async () => {
   draftDirty = false;
   $("#genStatus").textContent = "";
   renderAll();
+  setupWizard?.finishAfterPlan();
   document.querySelector('nav button[data-t="schedule"]').click();
 };
 
@@ -1393,3 +1452,21 @@ document.addEventListener("visibilitychange", () => {
 });
 
 createLanguageControl();
+
+setupWizard = createSetupWizard({
+  snapshot: () => S,
+  saveSetup: async (setup) => {
+    const saved = await save({ ...S, setup });
+    if (saved) {
+      draftToken = lastToken;
+      renderHome();
+    }
+    return saved;
+  },
+  renderTeam,
+  afterFinish: (destination) => {
+    renderAll();
+    document.querySelector(`nav [data-t="${destination}"]`).click();
+  },
+});
+setupWizard.openIfNeeded();

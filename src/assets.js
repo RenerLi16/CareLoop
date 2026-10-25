@@ -6,6 +6,7 @@ const root = fileURLToPath(new URL("../", import.meta.url));
 export const ASSETS = {
   "/": ["public/index.html", "text/html; charset=utf-8"],
   "/index.html": ["public/index.html", "text/html; charset=utf-8"],
+  "/careloop-logo.png": ["public/careloop-logo.png", "image/png"],
   "/style.css": ["public/style.css", "text/css; charset=utf-8"],
   "/manrope-latin.woff2": ["public/manrope-latin.woff2", "font/woff2"],
   "/manrope-vietnamese.woff2": [
@@ -15,6 +16,7 @@ export const ASSETS = {
   "/Manrope-OFL.txt": ["public/Manrope-OFL.txt", "text/plain; charset=utf-8"],
   "/i18n.js": ["public/i18n.js", "text/javascript; charset=utf-8"],
   "/timeline.js": ["public/timeline.js", "text/javascript; charset=utf-8"],
+  "/setup.js": ["public/setup.js", "text/javascript; charset=utf-8"],
   "/app.js": ["public/app.js", "text/javascript; charset=utf-8"],
   "/scheduler.js": ["src/scheduler.js", "text/javascript; charset=utf-8"],
   "/instructions.js": ["src/instructions.js", "text/javascript; charset=utf-8"],

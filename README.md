@@ -50,11 +50,17 @@ STATIC_DIR=dist npm start
 
 Patient records stay in the browser. Different browsers, addresses, and devices do not share a record. Browser storage behavior for local files varies, so use the same browser and address consistently. Check the final HTTPS address on the intended tablet before release.
 
+## First-visit setup
+
+New browsers open a four-screen setup flow: a CareLoop welcome, the patient’s name, the existing care-team editor, and the existing discharge reader. Screens fade out and in, and follow the device’s reduced-motion preference. The name field enables its forward arrow only after a nonblank name is entered. Care team and discharge steps can be skipped.
+
+Progress, patient name, and added caregivers stay in the local record. Skipping discharge opens the app with an invitation to add instructions later. Building a plan inside setup finishes the flow and opens Daily Schedule. Existing care plans go straight to the app. There is no repeat setup on reload after completion.
+
 ## Interface language and schedule labels
 
 The upper-right selector switches the interface between English, Vietnamese, Spanish, Simplified Chinese, and Korean. The preference stays in this browser, separate from care records. Patient names, medicine names, notes, and discharge instructions stay as entered; the instruction reader still accepts structured English. Translations are bundled locally and work offline.
 
-Daily Schedule uses a colored box for each dose and a separate row for each medicine. Completed doses appear at their actual recorded time, alongside their original target. A live current-time line moves across today’s chart. Choose a date to see the saved plan for that day; swipe the timeline horizontally on phones.
+Daily Schedule shows every medicine dose, weight check, symptom check, and follow-up in a colored box. Medicines keep their own colors; daily care and follow-ups use distinct event colors. Nearby events stack into additional rows, so simultaneous follow-ups stay readable. Completed doses appear at their actual recorded time, alongside their original target. A live current-time line moves across today’s chart. Choose a date to see the saved plan for that day; swipe the timeline horizontally on phones.
 
 New discharge plans start at the instant they are read into the app. The original discharge date remains patient information; medicine and daily-check slots earlier than the load time are omitted. Reopening or rebuilding the saved plan retains its original load time.
 

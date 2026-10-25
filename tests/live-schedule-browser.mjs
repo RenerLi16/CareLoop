@@ -45,7 +45,11 @@ try {
     };
     state.team = [{ id: "me", name: "Me", rel: "self" }];
     state.weigh = true;
-    state.symptoms = false;
+    state.symptoms = true;
+    state.followups = [
+      { id: "visit1", who: "Primary care", days: 0 },
+      { id: "visit2", who: "Clinic", days: 0 },
+    ];
     state.meds = [
       {
         id: "A",
@@ -82,11 +86,11 @@ try {
   await page.reload();
   const snapshot = () =>
     page.evaluate((key) => JSON.parse(localStorage.getItem(key)), key);
-  assert.equal(await page.locator(".overdue-card").count(), 3);
+  assert.equal(await page.locator(".overdue-card").count(), 5);
   assert.match(await page.locator("#nextTitle").innerText(), /10:00.*Beta/);
   assert.equal(
     await page.locator("#overdueTasks [data-overdue-done]").count(),
-    3,
+    5,
   );
   const state = await snapshot();
   const alpha = state.tasks.find((task) => task.medId === "A");
@@ -112,7 +116,19 @@ try {
   );
   await page.locator('nav [data-t="schedule"]').click();
   await page.locator(".medicine-box").first().waitFor();
-  assert.equal(await page.locator(".medicine-box").count(), 4);
+  assert.equal(await page.locator(".medicine-box").count(), 8);
+  const symptomBox = page.locator('.medicine-box[data-kind="symptom"]');
+  assert.match(await symptomBox.innerText(), /Daily symptom check/);
+  assert.match(await symptomBox.innerText(), /19:00/);
+  assert.equal(await symptomBox.getAttribute("data-minute"), "1140");
+  assert.equal(
+    await page.locator('.medicine-box[data-kind="weight"]').count(),
+    1,
+  );
+  assert.equal(
+    await page.locator('.medicine-box[data-kind="visit"]').count(),
+    2,
+  );
   const actualBox = page.locator(`[data-chart-task="${alpha.id}"]`);
   assert.match(await actualBox.innerText(), /09:30.*Done/);
   assert.match(await actualBox.innerText(), /Target 08:00/);
@@ -225,6 +241,31 @@ try {
     );
     await page.locator("[data-dismiss-resolution]").click();
   }
+  // Daily care can also be recorded directly from its chart box.
+  const symptom = (await snapshot()).tasks.find(
+    (task) => task.kind === "symptom",
+  );
+  await page.locator(`[data-chart-task="${symptom.id}"]`).click();
+  await page.locator('#record-form [name="recordedBy"]').selectOption("me");
+  await page.locator('#record-form button[type="submit"]').click();
+  await page.locator("#task-dialog").waitFor({ state: "detached" });
+  assert.equal(
+    (await snapshot()).tasks.find((task) => task.id === symptom.id).status,
+    "done",
+  );
+  assert.match(
+    await page.locator(`[data-chart-task="${symptom.id}"]`).innerText(),
+    /Done/,
+  );
+  assert.match(
+    await page.locator(`[data-chart-task="${symptom.id}"]`).innerText(),
+    /Target 19:00/,
+  );
+  assert.equal(
+    await page.locator("#resolution-dialog").count(),
+    0,
+    "Daily care does not trigger medicine spacing warnings",
+  );
   assert.deepEqual(errors, []);
   console.log(
     "Live workflow passed: future-only next up, overdue cards, saved actual times, conflict preview/decline/apply, anchored schedule updates, reload, live clock, stale preview and mobile boxes.",

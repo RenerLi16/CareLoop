@@ -3,13 +3,44 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>CareLoop — Discharge-to-Routine Compiler</title>
+    <title>CareLoop</title>
+    <link rel="icon" type="image/png" href="/careloop-logo.png" />
     <link rel="stylesheet" href="/style.css" />
   </head>
   <body>
+    <dialog id="setup-dialog" aria-labelledby="setup-title">
+      <div class="setup-shell">
+        <div class="setup-top">
+          <div class="setup-wordmark" aria-label="CareLoop">
+            <img
+              class="brand-symbol"
+              src="/careloop-logo.png"
+              alt=""
+              width="38"
+              height="39"
+            />
+            <span class="brand-name" data-no-translate>CareLoop</span>
+          </div>
+          <ol id="setup-progress" aria-label="Setup progress"></ol>
+        </div>
+        <div id="setup-stage" class="setup-stage"></div>
+        <p id="setup-error" class="setup-error" role="alert"></p>
+      </div>
+    </dialog>
     <header>
-      <h1>CareLoop</h1>
-      <span class="tag">DISCHARGE → ROUTINE COMPILER</span>
+      <div class="app-brand">
+        <img
+          class="brand-symbol"
+          src="/careloop-logo.png"
+          alt=""
+          width="42"
+          height="43"
+        />
+        <div>
+          <h1 class="brand-name" data-no-translate>CareLoop</h1>
+          <p class="brand-slogan" data-no-translate>Discharge to Routine</p>
+        </div>
+      </div>
       <span
         style="margin-left: auto; font-size: 12px; opacity: 0.85"
         id="hdrPat"
@@ -279,12 +310,14 @@
         </div>
         <details class="card">
           <summary>Edit caregivers</summary>
-          <div id="caregiverList"></div>
-          <form id="caregiverAdd" class="caregiver-edit">
-            <label>Name<input name="name" required maxlength="100" /></label
-            ><label>Relationship<input name="rel" maxlength="100" /></label
-            ><button class="act" type="submit">Add caregiver</button>
-          </form>
+          <div id="caregiverEditor">
+            <div id="caregiverList"></div>
+            <form id="caregiverAdd" class="caregiver-edit">
+              <label>Name<input name="name" required maxlength="100" /></label
+              ><label>Relationship<input name="rel" maxlength="100" /></label
+              ><button class="act" type="submit">Add caregiver</button>
+            </form>
+          </div>
         </details>
       </section>
 

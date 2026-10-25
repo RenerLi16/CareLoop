@@ -27,6 +27,7 @@ const bundled = [
   "public/recovery.js",
   "public/i18n.js",
   "public/timeline.js",
+  "public/setup.js",
   "public/app.js",
 ]
   .map((file) => withoutImports(read(file)))
@@ -44,6 +45,10 @@ const standalone = read("public/index.html")
   .replace(
     '<script type="module" src="/app.js"></script>',
     () => `<script type="module">\n${bundled}\n</script>`,
+  )
+  .replaceAll(
+    "/careloop-logo.png",
+    `data:image/png;base64,${sourceAsset("/careloop-logo.png").toString("base64")}`,
   );
 writeFileSync(new URL("careloop.html", output), standalone);
 console.log(

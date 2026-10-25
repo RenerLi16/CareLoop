@@ -24,6 +24,7 @@ export function emptyRecord() {
     schema: 2,
     revision: 0,
     planStartAt: null,
+    setup: null,
     patient: null,
     meds: [],
     followups: [],
@@ -65,6 +66,18 @@ export function normalizeRecord(input) {
   requireValue(
     value.planStartAt == null ||
       (Number.isFinite(value.planStartAt) && value.planStartAt >= 0),
+  );
+  requireValue(
+    value.setup == null ||
+      (typeof value.setup === "object" &&
+        !Array.isArray(value.setup) &&
+        Number.isInteger(value.setup.step) &&
+        value.setup.step >= 0 &&
+        value.setup.step <= 3 &&
+        short(value.setup.patientName) &&
+        typeof value.setup.completed === "boolean" &&
+        (!value.setup.completed || value.setup.step === 3) &&
+        (value.setup.step < 2 || Boolean(value.setup.patientName.trim()))),
   );
   for (const key of [
     "meds",

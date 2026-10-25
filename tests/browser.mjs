@@ -1,3 +1,4 @@
+import { finishFirstVisit } from "./setup-helper.mjs";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { mkdirSync } from "node:fs";
@@ -46,6 +47,7 @@ try {
   });
   await page.clock.install({ time: new Date("2026-10-25T12:00:00") });
   await page.goto(url);
+  await finishFirstVisit(page);
   assert.ok(
     await page.evaluate(
       async () => (await document.fonts.load('600 15px "Manrope"')).length > 0,
@@ -252,6 +254,7 @@ try {
     errors.push("standalone: " + error.message),
   );
   await standalone.goto(new URL("../dist/careloop.html", import.meta.url).href);
+  await finishFirstVisit(standalone);
   assert.equal(await standalone.locator("nav button").count(), 6);
   assert.ok(
     await standalone.evaluate(

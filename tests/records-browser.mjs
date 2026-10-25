@@ -1,3 +1,4 @@
+import { finishFirstVisit } from "./setup-helper.mjs";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { readFileSync, mkdirSync } from "node:fs";
@@ -17,7 +18,7 @@ const snapshot = (page) =>
 const clickTab = (page, id) => page.locator(`nav [data-t="${id}"]`).click();
 async function addPerson(page, name) {
   await clickTab(page, "team");
-  const details = page.locator("#caregiverAdd").locator("..");
+  const details = page.locator("#p-team details");
   if (!(await details.evaluate((element) => element.open)))
     await details.locator("summary").click();
   await page.locator('#caregiverAdd [name="name"]').fill(name);
@@ -85,6 +86,7 @@ try {
   page.on("pageerror", (e) => errors.push(e.message));
   await page.clock.install({ time: new Date("2026-10-25T14:00:00Z") });
   await page.goto(url);
+  await finishFirstVisit(page, "Fictional Record Test");
   await clickTab(page, "import");
   await page
     .locator("#rawText")
@@ -283,6 +285,7 @@ try {
   fresh.on("pageerror", (e) => errors.push(e.message));
   await fresh.clock.install({ time: new Date("2026-11-01T10:30:00Z") });
   await fresh.goto(url);
+  await finishFirstVisit(fresh, "Fictional Record Test");
   await openBackup(fresh, file);
   await unlock(fresh);
   await fresh.locator('[data-recovery-form="restore"]').waitFor();
