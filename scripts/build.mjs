@@ -20,6 +20,7 @@ const bundled = [
   "src/scheduler.js",
   "src/instructions.js",
   "src/care-plan.js",
+  "src/live-schedule.js",
   "src/record.js",
   "src/record-store.js",
   "src/file-protection.js",

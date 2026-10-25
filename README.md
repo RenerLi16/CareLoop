@@ -54,7 +54,9 @@ Patient records stay in the browser. Different browsers, addresses, and devices 
 
 The upper-right selector switches the interface between English, Vietnamese, Spanish, Simplified Chinese, and Korean. The preference stays in this browser, separate from care records. Patient names, medicine names, notes, and discharge instructions stay as entered; the instruction reader still accepts structured English. Translations are bundled locally and work offline.
 
-Daily Schedule labels each medicine and time above or below its point. Nearby labels use additional rows rather than overlapping, including medicines at the same time. On phones, swipe the timeline horizontally to see the full day.
+Daily Schedule uses a colored box for each dose and a separate row for each medicine. Completed doses appear at their actual recorded time, alongside their original target. A live current-time line moves across today’s chart. Choose a date to see the saved plan for that day; swipe the timeline horizontally on phones.
+
+Today lists every past-due pending item in a yellow card with its own Mark done button. Next up shows the earliest pending item at or after the current time, including the following day when needed. Upcoming is blue; the five-minute target window is green when the entered timing restrictions also fit.
 
 ## Scheduling
 
@@ -65,8 +67,10 @@ Compile schedule and Auto-resolve schedule search for times satisfying the suppo
 - Breakfast, lunch, and dinner default to 08:00, 12:00, and 18:00 and can be reviewed under Meal times.
 - Supported assumptions: with food means within 30 minutes; before/after food means 15–60 minutes; morning is 08:00 and bedtime is 22:00. Ordinary twice/three-times-daily plans use daytime slots at least four hours apart. Review these assumptions against the written instructions.
 - Food and spacing rules are rechecked across the dated plan. Clock-change conflicts block saving. Search uses 15-minute slots and a bounded search; failure does not establish that a prescription is impossible.
-- Rebuilding preserves records. Changes around a medicine already recorded today require review rather than automatic dose compensation.
-- Try a conflict example is a separate preview and never changes the saved plan.
+- Recording outside the target window or an entered timing restriction saves the actual event, then opens a conflict review. The preview offers revised times for pending doses, with an explicit Apply or Keep current schedule choice.
+- Runtime resolution anchors completed doses at their actual times. It preserves each pending dose, day, caregiver assignment, food and spacing restrictions, and exact elapsed intervals. Past-day overdue tasks stay open for review; it does not invent replacement doses or relax instructions to make a plan fit.
+- Runtime search uses five-minute candidate times plus exact interval and spacing boundaries. A bounded search that finds no solution leaves the saved timetable unchanged.
+- Editing the prescription after a medicine is already recorded today still requires review. Unchanged rebuilds preserve runtime adjustments and completion records.
 
 The reader handles structured English lines. Unsupported wording remains for review. Paragraph understanding, photo reading, translation of entered care instructions, calendar export, and remote sharing are not included. Follow-ups represent booking deadlines.
 
@@ -93,6 +97,7 @@ npm run test:release
 npm run test:records
 npm run test:upgrade
 npm run test:mobile
+npm run test:live
 npm run test:language
 npm run format:check
 ```

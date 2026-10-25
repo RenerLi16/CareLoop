@@ -38,6 +38,13 @@ async function saveDialog(page, { name = "Lan", time, note } = {}) {
   if (note !== undefined)
     await page.locator('#record-form [name="note"]').fill(note);
   await page.locator('#record-form button[type="submit"]').click();
+  await page.waitForFunction(
+    () =>
+      !document.querySelector("#task-dialog") ||
+      document.querySelector("#record-error")?.textContent,
+  );
+  if (await page.locator("#resolution-dialog").count())
+    await page.locator("[data-dismiss-resolution]").click();
 }
 async function openBackup(page, file) {
   await clickTab(page, "about");
@@ -339,6 +346,8 @@ try {
     .selectOption({ index: 1 });
   await fresh.locator('#record-form button[type="submit"]').click();
   await fresh.locator("#task-dialog").waitFor({ state: "detached" });
+  if (await fresh.locator("#resolution-dialog").count())
+    await fresh.locator("[data-dismiss-resolution]").click();
   assert.equal(
     (await snapshot(fresh)).tasks.find((t) => t.id === repeated.id).doneAt,
     new Date("2026-11-01T09:30:00Z").getTime(),

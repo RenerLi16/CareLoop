@@ -106,7 +106,7 @@ export function generatePlanTasks(state, days = 30) {
   }
   return tasks.sort((a, b) => a.dueAt - b.dueAt || a.id.localeCompare(b.id));
 }
-export function validateDatedTasks(plan, tasks) {
+export function validateDatedTasks(plan, tasks, { pendingOnly = false } = {}) {
   const errors = [],
     meds = new Map(plan.meds.map((m) => [m.id, m]));
   const doses = tasks
@@ -119,7 +119,11 @@ export function validateDatedTasks(plan, tasks) {
     if (!exact) continue;
     const own = doses.filter((task) => task.medId === med.id);
     for (let i = 1; i < own.length; i++)
-      if (own[i].dueAt - own[i - 1].dueAt !== Number(exact[1]) * 3600000) {
+      if (
+        (!pendingOnly ||
+          (own[i].status === "todo" && own[i - 1].status === "todo")) &&
+        own[i].dueAt - own[i - 1].dueAt !== Number(exact[1]) * 3600000
+      ) {
         errors.push(
           `${own[i].date}: ${med.drug} would no longer have its entered ${exact[1]}-hour interval. The saved records and timetable need review before replacing the plan.`,
         );
@@ -129,7 +133,8 @@ export function validateDatedTasks(plan, tasks) {
 
   for (const task of doses) {
     const med = meds.get(task.medId);
-    if (!med || med.meal === "any") continue;
+    if (!med || med.meal === "any" || (pendingOnly && task.status !== "todo"))
+      continue;
     const meals = Object.entries(plan.meals)
       .filter(
         ([key]) =>
@@ -163,7 +168,11 @@ export function validateDatedTasks(plan, tasks) {
           (r.a === a.medId && r.b === b.medId) ||
           (r.b === a.medId && r.a === b.medId),
       );
-      if (rule && hours < rule.hours)
+      if (
+        rule &&
+        hours < rule.hours &&
+        (!pendingOnly || (a.status === "todo" && b.status === "todo"))
+      )
         errors.push(
           `${b.date}: ${rule.aName} and ${rule.bName} are ${hours.toFixed(2)} hours apart; the entered rule requires ${rule.hours}. No revised plan was saved. Review the instructions and timing settings.`,
         );
@@ -206,17 +215,26 @@ export function preparePlanTasks(
       ],
     };
   }
+  const unchangedTiming =
+    timingSignature(previous) === timingSignature(candidate);
   const old = new Map(previous.tasks.map((t) => [t.id, t])),
     generated = generatePlanTasks(candidate);
   const tasks = generated.map((task) => {
     const prior = old.get(task.id);
     if (prior && prior.status !== "todo")
       return { ...prior, dueAt: prior.dueAt ?? at(prior.date, prior.time) };
+    if (prior && unchangedTiming) return { ...prior };
     return prior ? { ...task, who: prior.who } : task;
   });
   const errors = validateDatedTasks(
     candidate,
-    tasks.filter((t) => t.date >= today),
+    tasks
+      .filter((t) => t.date >= today)
+      .map((task) =>
+        task.status === "done" && task.doneAt != null
+          ? { ...task, dueAt: task.doneAt }
+          : task,
+      ),
   );
   if (errors.length) return { ok: false, errors };
   const ids = new Set(tasks.map((t) => t.id));

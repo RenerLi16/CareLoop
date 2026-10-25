@@ -45,6 +45,7 @@
         </p>
         <div class="grid" id="homeStats"></div>
         <div id="homeAlerts"></div>
+        <div id="overdueTasks"></div>
         <div class="card hd" id="nextCard" style="display: none">
           <div
             class="small"
@@ -67,6 +68,7 @@
           >
             —
           </div>
+          <div id="nextStatus" class="timing-status"></div>
           <div class="small" id="nextWho">—</div>
           <div style="margin-top: 10px">
             <button class="act" id="btnNextDone">Mark done</button>
@@ -244,10 +246,7 @@
 
       <section class="panel" id="p-schedule">
         <h2>Daily schedule</h2>
-        <p class="sub">
-          The compiler places every dose so that all timing rules hold at once.
-          Move one thing and it re-checks the whole day.
-        </p>
+
         <div id="scheduleBody">
           <span class="small">Compile a plan first.</span>
         </div>

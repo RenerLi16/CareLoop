@@ -12,23 +12,27 @@ const server = spawn(process.execPath, ["src/server.js"], {
 let browser;
 async function checkLabels(page) {
   await page.waitForFunction(() =>
-    [...document.querySelectorAll(".tl .pin .lb")].every((e) => e.style.top),
+    [...document.querySelectorAll(".medicine-timeline .medicine-box")].every(
+      (e) => e.style.top,
+    ),
   );
-  const labels = await page.locator(".tl .pin").evaluateAll((pins) =>
-    pins.map((pin) => {
-      const box = pin.querySelector(".lb").getBoundingClientRect();
-      return {
-        name: pin.querySelector(".lb span").textContent,
-        side: pin.dataset.side,
-        x: box.x,
-        y: box.y,
-        right: box.right,
-        bottom: box.bottom,
-      };
-    }),
-  );
+  const labels = await page
+    .locator(".medicine-timeline .medicine-box")
+    .evaluateAll((pins) =>
+      pins.map((pin) => {
+        const box = pin.getBoundingClientRect();
+        return {
+          name: pin.querySelector("b").textContent,
+          lane: pin.dataset.lane,
+          x: box.x,
+          y: box.y,
+          right: box.right,
+          bottom: box.bottom,
+        };
+      }),
+    );
   for (let i = 0; i < labels.length; i++) {
-    assert.equal(labels[i].side, i % 2 ? "below" : "above");
+    assert.ok(labels[i].lane != null);
     for (let j = 0; j < i; j++)
       assert.ok(
         !(
@@ -90,7 +94,7 @@ try {
     );
     assert.match(
       await page.locator("#nextTitle").innerText(),
-      /Furosemide|Metoprolol/,
+      /Furosemide|Metoprolol|Lisinopril|Atorvastatin|weight|symptom/,
     );
   }
   await page.locator('nav [data-t="import"]').click();
@@ -179,7 +183,7 @@ try {
   await page.locator("#btnGenerate").click();
   await page.locator("#p-schedule.on").waitFor();
   assert.equal((await checkLabels(page)).length, 6);
-  assert.equal(await page.locator(".tl img").count(), 0);
+  assert.equal(await page.locator(".medicine-timeline img").count(), 0);
   assert.equal(await page.evaluate(() => window.injected), undefined);
   const standalone = await browser.newPage();
   standalone.on("pageerror", (e) => errors.push(e.message));
@@ -195,7 +199,7 @@ try {
   await standalone.close();
   assert.deepEqual(errors, []);
   console.log(
-    "Language/timeline checks passed: five languages, persistence, unchanged records/drafts/option values, offline standalone, alternating non-overlapping medicine labels, crowded names and responsive layout.",
+    "Language/timeline checks passed: five languages, persistence, unchanged records/drafts/option values, offline standalone, non-overlapping medicine boxes, crowded names and responsive layout.",
   );
 } finally {
   if (browser) await browser.close();

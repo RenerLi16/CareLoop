@@ -18,6 +18,10 @@ export const ASSETS = {
   "/app.js": ["public/app.js", "text/javascript; charset=utf-8"],
   "/scheduler.js": ["src/scheduler.js", "text/javascript; charset=utf-8"],
   "/instructions.js": ["src/instructions.js", "text/javascript; charset=utf-8"],
+  "/live-schedule.js": [
+    "src/live-schedule.js",
+    "text/javascript; charset=utf-8",
+  ],
   "/care-plan.js": ["src/care-plan.js", "text/javascript; charset=utf-8"],
   "/record.js": ["src/record.js", "text/javascript; charset=utf-8"],
   "/record-store.js": ["src/record-store.js", "text/javascript; charset=utf-8"],

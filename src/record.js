@@ -241,6 +241,7 @@ export function validateBackup(payload) {
     validateDatedTasks(
       record,
       record.tasks.filter((task) => task.date >= dayOf(new Date())),
+      { pendingOnly: true },
     ).length === 0,
     "The backup’s dated timetable needs review before it can be restored.",
   );

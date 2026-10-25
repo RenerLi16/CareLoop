@@ -16,6 +16,8 @@ async function finishRecord(page) {
     .selectOption({ index: 1 });
   await page.locator('#record-form button[type="submit"]').click();
   await page.locator("#task-dialog").waitFor({ state: "detached" });
+  if (await page.locator("#resolution-dialog").count())
+    await page.locator("[data-dismiss-resolution]").click();
 }
 let browser;
 try {
@@ -96,19 +98,17 @@ try {
   assert.equal(saved.tasks.filter((t) => t.kind === "med").length, 150);
   assert.match(
     await page.locator("#scheduleBody").innerText(),
-    /Automatically resolved/,
+    /medicines.*doses/s,
   );
   assert.match(
     await page.locator("#scheduleBody").innerText(),
     /Lisinopril|Metoprolol/,
   );
   const firstTimes = structuredClone(saved.schedule.times);
-  await page.locator("#btnTestMove").click();
-  assert.match(
-    await page.locator("#recompMsg").innerText(),
-    /saved plan unchanged/,
-  );
+  await page.locator("#btnRecompile").click();
+  await page.locator("#resolution-dialog").waitFor();
   assert.deepEqual((await state()).schedule.times, firstTimes);
+  await page.locator("[data-dismiss-resolution]").click();
   mkdirSync("test-results", { recursive: true });
   await page.screenshot({
     path: "test-results/restart-daily.png",
@@ -136,6 +136,7 @@ try {
     (await state()).tasks.find((t) => t.id === doneId),
     completed,
   );
+  await page.locator("[data-dismiss-resolution]").click();
   // Impossible fixed-time rule set: no draft data can replace the saved plan.
   await page
     .getByRole("button", { name: "Read Discharge", exact: true })
@@ -270,12 +271,12 @@ try {
   await standalone.locator("#p-schedule.on").waitFor();
   assert.match(
     await standalone.locator("#scheduleBody").innerText(),
-    /Automatically resolved/,
+    /medicines.*doses/s,
   );
   await standalone.close();
   assert.deepEqual(errors, []);
   console.log(
-    "Browser checks passed: original six-tab UI, parser review, automatic resolution/explanations, immutable conflict example, working date filter, preserved records, blocked impossible plan, escaped input, reload and responsive layouts.",
+    "Browser checks passed: original six-tab UI, parser review, automatic resolution previews, preserved completed records, working date filter, preserved records, blocked impossible plan, escaped input, reload and responsive layouts.",
   );
 } finally {
   if (browser) await browser.close();
