@@ -76,7 +76,7 @@ export function createRecovery({
     if (!record.profile)
       throw new Error("There is no saved bedside record to back up yet.");
     show(
-      `<form data-recovery-form="export"><h2 id="recovery-title">Save an encrypted backup</h2><p>This file contains the saved record, including care history and caregiver names. Unsaved drafts are not included.</p>${summary(record)}${password("passphrase", "Backup passphrase (at least 12 characters)", true)}${password("repeat", "Repeat backup passphrase", true)}<p class="notice">Keep this passphrase separately. CareLoop does not save it and cannot recover it. This protects the exported file; the bedside app still has no sign-in.</p>${footer("Encrypt and download")}</form>`,
+      `<form data-recovery-form="export"><h2 id="recovery-title">Save an encrypted backup</h2><p>Includes saved records only. Unsaved changes are excluded.</p>${summary(record)}${password("passphrase", "Backup passphrase (at least 12 characters)", true)}${password("repeat", "Repeat backup passphrase", true)}<p class="notice">Keep your passphrase. CareLoop cannot recover it.</p>${footer("Encrypt and download")}</form>`,
     );
     selected = makeBackup(record);
   }
@@ -94,7 +94,7 @@ export function createRecovery({
     }
     if (parsed?.format === PROTECTED_FORMAT) {
       show(
-        `<form data-recovery-form="unlock"><h2 id="recovery-title">Unlock backup for review</h2><p>Enter the file’s passphrase. Unlocking and reviewing it does not replace this device’s record.</p>${password("passphrase", "Backup passphrase")}${footer("Unlock and review")}</form>`,
+        `<form data-recovery-form="unlock"><h2 id="recovery-title">Unlock backup for review</h2><p>Review the backup before replacing your record.</p>${password("passphrase", "Backup passphrase")}${footer("Unlock and review")}</form>`,
       );
       selected = parsed;
       expectedVersion = baseline.version;
@@ -110,7 +110,7 @@ export function createRecovery({
     const record = validateBackup(backup);
     const date = new Date(backup.exportedAt).toLocaleString();
     show(
-      `<form data-recovery-form="restore"><h2 id="recovery-title">Review before restoring</h2><p>Backup created ${esc(date)}. No record has been replaced.</p>${plain ? '<p class="notice">This is an older unencrypted bedside backup. The file can be read by anyone who has it. New downloads use encryption.</p>' : ""}<div class="restore-comparison"><section><h3>Backup to restore</h3>${summary(record)}</section><section><h3>Currently on this device</h3>${summary(current)}</section></div><label class="check"><input type="checkbox" name="understood" required>I understand this replaces the saved bedside record and current drafts. I have kept any current data I need.</label><label>Type RESTORE to replace the record<input name="confirmation" required autocomplete="off" pattern="RESTORE"></label>${footer("Replace with this backup")}</form>`,
+      `<form data-recovery-form="restore"><h2 id="recovery-title">Review before restoring</h2><p>Created ${esc(date)}.</p>${plain ? '<p class="notice">Unencrypted backup: anyone with the file can read it.</p>' : ""}<div class="restore-comparison"><section><h3>Backup to restore</h3>${summary(record)}</section><section><h3>Currently on this device</h3>${summary(current)}</section></div><label class="check"><input type="checkbox" name="understood" required>I understand this replaces the saved bedside record and current drafts. I have kept any current data I need.</label><label>Type RESTORE to replace the record<input name="confirmation" required autocomplete="off" pattern="RESTORE"></label>${footer("Replace with this backup")}</form>`,
     );
     selected = { ...backup, record };
     expectedVersion = version;
@@ -120,7 +120,7 @@ export function createRecovery({
     if (!record.profile)
       throw new Error("There is no bedside record to delete.");
     show(
-      `<form data-recovery-form="delete"><h2 id="recovery-title">Delete this browser’s care record?</h2>${summary(record)}<p>Deletes saved setup, caregiver names, the plan, tasks, and activity in this browser. Unsaved drafts will be discarded. This does not remove downloaded files, external calendars, the old server database, or device backups. This is not secure wiping of the device.</p><button type="button" class="secondary" data-recovery-action="export">Save an encrypted backup first</button><p class="muted">After downloading, check the file is in your downloads before returning to delete the record.</p><label class="check"><input type="checkbox" name="understood" required>I understand this cannot be undone here without a backup.</label><label>Type DELETE to confirm<input name="confirmation" required autocomplete="off" pattern="DELETE"></label>${footer("Delete this browser’s record")}</form>`,
+      `<form data-recovery-form="delete"><h2 id="recovery-title">Delete this browser’s care record?</h2>${summary(record)}<p>Deletes all care records and unsaved changes in this browser. Downloaded files, calendars, and other backups remain.</p><button type="button" class="secondary" data-recovery-action="export">Save an encrypted backup first</button><p class="muted">Check your backup downloaded before deleting.</p><label class="check"><input type="checkbox" name="understood" required>I understand this cannot be undone here without a backup.</label><label>Type DELETE to confirm<input name="confirmation" required autocomplete="off" pattern="DELETE"></label>${footer("Delete this browser’s record")}</form>`,
     );
     expectedVersion = record.version;
   }
@@ -177,7 +177,7 @@ export function createRecovery({
         await onComplete(kind);
         toast(
           kind === "restore"
-            ? "Backup restored on this device."
+            ? "Backup restored."
             : "This browser’s care record was deleted.",
         );
       }

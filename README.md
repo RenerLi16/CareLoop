@@ -20,16 +20,16 @@ The reduced three-screen mockup has been retired. Use the working app at **http:
 
 Every main workflow is directly available in navigation:
 
-| Destination      | What works                                                                                                                                                              |
-| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Today            | Next task, completion/pending/skipped counts, timing warnings, past-due tasks, and entered clinician instructions                                                       |
-| Add instructions | Paste discharge text, load the fictional example, or enter manually; review editable medicines, timing rules, monitoring, follow-ups and warnings; save the 30-day plan |
-| Daily schedule   | A date-specific time diagram, a readable task agenda, medicine rules, schedule rebuilding, and a separate timing-conflict example                                       |
-| 30-day plan      | Thirty day cards, individual-day or all-days view, status/caregiver filters, direct assignment, completion and skipping                                                 |
-| Caregivers       | Add, rename and remove names; assigned task counts, completion rate, active days, relative workload and unassigned tasks                                                |
-| Calendar         | Monthly calendar, selected-day agenda and calendar-file download with 15-minute reminders                                                                               |
-| Records          | Search, filter previous dates, correct records and view activity history                                                                                                |
-| Settings         | Offline installation/status, reminders, encrypted backup, reviewed restore and deletion                                                                                 |
+| Destination    | What works                                                                                                                                                              |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Today          | Next task, completion/pending/skipped counts, timing warnings, past-due tasks, and entered clinician instructions                                                       |
+| Read discharge | Paste discharge text, load the fictional example, or enter manually; review editable medicines, timing rules, monitoring, follow-ups and warnings; save the 30-day plan |
+| Daily schedule | A date-specific time diagram, a readable task agenda, medicine rules, schedule rebuilding, and a separate timing-conflict example                                       |
+| 30-day plan    | A 30-date selector, individual-day or all-days task tables, status/caregiver filters, direct assignment, completion and skipping                                        |
+| Care team      | Add, rename and remove names; assigned task counts, completion rate, active days, relative workload and unassigned tasks                                                |
+| Calendar       | Monthly calendar, selected-day agenda and calendar-file download with 15-minute reminders                                                                               |
+| Records        | Search, filter previous dates, correct records and view activity history                                                                                                |
+| Settings       | Offline installation/status, reminders, encrypted backup, reviewed restore and deletion                                                                                 |
 
 The original HTML’s useful workflows are retained. The original language dropdown only saved a preference; it did not translate the rendered screens. This version continues to describe its interface as English-only. It does not add photo import or unsupported medical rules.
 
@@ -209,3 +209,9 @@ Use fictional data for these checks. Browser automation does not prove that ever
 6. Use the notification/closed-app limitations as documented; this implementation does not promise alarms while locked or closed.
 
 Clinical review of the supported timing assumptions and caregiver usability testing have not been performed. Optional OCR, translations, background alarms, and migration of older server records remain outside this implementation.
+
+### Instructor layout refresh
+
+The interface follows the instructor HTML’s navy header, horizontal tabs, visible Today statistics, medication review table, daily timeline and timing-rule table, 30-day task table with a date selector, and care-team workload table. Larger touch targets, labelled timeline rows, and contained table scrolling improve readability. Calendar, Records, and Settings retain the existing device-only workflows.
+
+The app remains modular JavaScript. Care records are JSON-compatible structured objects in IndexedDB; no React dependency or data conversion is required. `public/instructor.css` contains the visual layout, while the existing storage, scheduling, recording, and recovery modules remain in use. New screen layouts preserve the current record schema. This copies the instructor’s workflow and visual structure, while retaining corrections to the prototype’s parsing, scheduling, and history handling.

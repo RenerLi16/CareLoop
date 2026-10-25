@@ -291,7 +291,7 @@ try {
     .waitFor();
   assert.match(
     await page.locator("#recovery-dialog").innerText(),
-    /older unencrypted/,
+    /Unencrypted backup/,
   );
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
   const malformed = structuredClone(backup);

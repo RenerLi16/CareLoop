@@ -40,7 +40,7 @@ try {
   );
   await page.clock.install({ time: new Date("2026-10-25T15:10:00.000Z") });
   await page.goto(url);
-  await page.getByRole("heading", { name: /One tablet/ }).waitFor();
+  await page.getByRole("heading", { name: "Set up CareLoop" }).waitFor();
   assert.equal(
     await page.locator("input[type=password], input[type=email]").count(),
     0,
@@ -67,7 +67,7 @@ try {
     await checkbox.check();
   await page.getByRole("button", { name: "Save 30-day plan" }).click();
   await page.getByRole("heading", { name: "Daily schedule" }).waitFor();
-  assert.equal(await page.locator(".schedule-row").count(), 4);
+  assert.equal(await page.locator(".medicine-rules tbody tr").count(), 4);
   await page.getByRole("button", { name: "Today", exact: true }).click();
   await page.getByRole("button", { name: "Records", exact: true }).click();
   await page.locator("#day-filter").fill("2026-10-24");
@@ -76,9 +76,7 @@ try {
   await page
     .getByLabel("Recorded by", { exact: true })
     .selectOption({ label: "Lan" });
-  await page
-    .getByLabel("Actual completion / skip time")
-    .fill("2026-10-24T08:05");
+  await page.getByLabel("Actual time (device time)").fill("2026-10-24T08:05");
   await page.getByRole("button", { name: "Save completed record" }).click();
   await page.locator(".task.completed").first().waitFor();
   assert.match(
@@ -191,14 +189,14 @@ try {
   );
   // Management is explicit and can be exited without publishing a plan.
   await page
-    .getByRole("button", { name: "Add instructions", exact: true })
+    .getByRole("button", { name: "Read discharge", exact: true })
     .click();
   await page
     .getByLabel("Patient name", { exact: true })
     .fill("Unsaved draft name");
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   await page
-    .getByRole("button", { name: "Add instructions", exact: true })
+    .getByRole("button", { name: "Read discharge", exact: true })
     .click();
   assert.equal(
     await page.getByLabel("Patient name", { exact: true }).inputValue(),
@@ -252,7 +250,7 @@ try {
   });
   await page.reload();
   await page.getByRole("heading", { name: "Today", exact: true }).waitFor();
-  await page.getByRole("button", { name: "Caregivers", exact: true }).click();
+  await page.getByRole("button", { name: "Care team", exact: true }).click();
   await page.getByLabel("Caregiver name", { exact: true }).fill("Amy");
   await page
     .getByRole("button", { name: "Add caregiver", exact: true })
@@ -312,7 +310,7 @@ try {
   await page.locator("dialog").waitFor({ state: "detached" });
   await page
     .locator(".bedside-focus")
-    .getByText("Assigned to Minh", { exact: true })
+    .getByText("Minh", { exact: true })
     .waitFor();
   assert.match(await page.locator("#next-task-title").innerText(), /Example A/);
   await page.setViewportSize({ width: 390, height: 844 });

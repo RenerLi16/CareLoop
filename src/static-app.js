@@ -17,6 +17,7 @@ export const APP_FILES = Object.freeze({
   "/domain.js": ["src/domain.js", "text/javascript; charset=utf-8"],
   "/bedside.js": ["src/bedside.js", "text/javascript; charset=utf-8"],
   "/care-record.js": ["src/care-record.js", "text/javascript; charset=utf-8"],
+  "/instructor.css": ["public/instructor.css", "text/css; charset=utf-8"],
   "/style.css": ["public/style.css", "text/css; charset=utf-8"],
   "/sample.txt": ["public/sample.txt", "text/plain; charset=utf-8"],
   "/manifest.webmanifest": [

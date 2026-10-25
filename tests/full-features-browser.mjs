@@ -49,10 +49,10 @@ try {
   await page.getByRole("navigation", { name: "Main navigation" }).waitFor();
   for (const name of [
     "Today",
-    "Add instructions",
+    "Read discharge",
     "Daily schedule",
     "30-day plan",
-    "Caregivers",
+    "Care team",
     "Calendar",
     "Records",
     "Settings",
@@ -64,8 +64,19 @@ try {
         .count(),
       1,
     );
+  const navBoxes = await page.locator("nav .nav-item").evaluateAll((buttons) =>
+    buttons.map((button) => ({
+      top: button.getBoundingClientRect().top,
+      height: button.getBoundingClientRect().height,
+    })),
+  );
+  assert.ok(
+    navBoxes.every((box) => Math.abs(box.top - navBoxes[0].top) < 2),
+    "Desktop tabs must share one compact row",
+  );
+  assert.ok(navBoxes[0].height <= 60, "Navigation must not consume the page");
   await page
-    .getByRole("button", { name: "Add instructions", exact: true })
+    .getByRole("button", { name: "Read discharge", exact: true })
     .click();
   await page
     .getByRole("button", { name: "Enter manually", exact: true })
@@ -93,6 +104,15 @@ try {
   await page
     .getByRole("heading", { name: "Daily schedule", exact: true })
     .waitFor();
+  await page.getByRole("button", { name: "Today", exact: true }).click();
+  assert.equal(await page.locator(".overview-stats > div").count(), 4);
+  await page.screenshot({
+    path: "test-results/instructor-today.png",
+    fullPage: true,
+  });
+  await page
+    .getByRole("button", { name: "Daily schedule", exact: true })
+    .click();
   assert.equal(await page.locator(".diagram-row").count(), 6);
   assert.equal(await page.locator(".diagram-pin").count(), 7);
   const morningDot = await page
@@ -153,9 +173,9 @@ try {
     path: "test-results/full-30-day-plan.png",
     fullPage: false,
   });
-  await page.locator('[data-plan-day="2026-10-25"]').click();
+  await page.locator("#plan-day").selectOption("2026-10-25");
   await page
-    .getByRole("button", { name: "Record as skipped", exact: true })
+    .getByRole("button", { name: /^Record as skipped:/ })
     .first()
     .click();
   assert.equal(
@@ -186,12 +206,12 @@ try {
     .getByRole("button", { name: "Save completed record", exact: true })
     .click();
   await page.locator("dialog").waitFor({ state: "detached" });
-  await page.getByRole("button", { name: "Caregivers", exact: true }).click();
+  await page.getByRole("button", { name: "Care team", exact: true }).click();
   const lan = page.locator(".load-row").filter({ hasText: "Lan" });
-  assert.match(await lan.innerText(), /2 assigned/);
-  assert.match(await lan.innerText(), /1 completed/);
-  assert.match(await lan.innerText(), /50% complete/);
-  assert.match(await lan.innerText(), /1 active days/);
+  assert.equal(await lan.locator("td").nth(2).innerText(), "2");
+  assert.equal(await lan.locator("td").nth(3).innerText(), "1");
+  assert.equal(await lan.locator("td").nth(4).innerText(), "50%");
+  assert.equal(await lan.locator("td").nth(5).innerText(), "1");
   const lanTrack = await lan.locator(".load-track").boundingBox();
   const lanFill = await lan.locator("rect").boundingBox();
   assert.ok(
@@ -206,7 +226,9 @@ try {
   await page
     .getByRole("button", { name: "Daily schedule", exact: true })
     .click();
-  await page.getByText("Medicine timing rules", { exact: true }).click();
+  await page
+    .getByRole("heading", { name: "Medicine timing rules", exact: true })
+    .waitFor();
   await page
     .getByRole("button", { name: "Rebuild schedule", exact: true })
     .click();
@@ -246,10 +268,10 @@ try {
     await page.setViewportSize({ width, height: 1000 });
     for (const name of [
       "Today",
-      "Add instructions",
+      "Read discharge",
       "Daily schedule",
       "30-day plan",
-      "Caregivers",
+      "Care team",
       "Calendar",
       "Records",
       "Settings",

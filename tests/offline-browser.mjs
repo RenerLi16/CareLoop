@@ -113,7 +113,7 @@ try {
   await page.locator('#device-status[data-persistence="granted"]').waitFor();
   assert.match(
     await page.locator("#device-status").innerText(),
-    /does not prevent manual/,
+    /Keep a backup even when storage is protected/,
   );
   const cached = await page.evaluate(async () => {
     const cacheNames = (await caches.keys()).filter((k) =>
@@ -161,12 +161,12 @@ try {
   await page.locator(".recorded-today").waitFor();
   assert.match(
     await page.locator(".bedside-progress").innerText(),
-    /1\s+Completed/,
+    /1\s*\/\s*7 done/,
   );
   // A downloaded update must wait without replacing the open page or its unsaved draft.
   await context.setOffline(false);
   await page
-    .getByRole("button", { name: "Add instructions", exact: true })
+    .getByRole("button", { name: "Read discharge", exact: true })
     .click();
   await page
     .getByLabel("Patient name", { exact: true })
@@ -276,7 +276,7 @@ try {
   });
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   await page
-    .getByRole("button", { name: "Add instructions", exact: true })
+    .getByRole("button", { name: "Read discharge", exact: true })
     .click();
   await page.getByRole("button", { name: "Load fictional example" }).click();
   assert.match(
