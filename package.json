@@ -15,7 +15,8 @@
     "build": "node scripts/build.mjs",
     "format": "prettier --write src public tests scripts package.json README.md",
     "format:check": "prettier --check src public tests scripts package.json README.md",
-    "test:release": "node tests/release-browser.mjs"
+    "test:release": "node tests/release-browser.mjs",
+    "test:records": "node tests/records-browser.mjs"
   },
   "devDependencies": {
     "prettier": "^3.6.2"

@@ -20,6 +20,10 @@ const bundled = [
   "src/scheduler.js",
   "src/instructions.js",
   "src/care-plan.js",
+  "src/record.js",
+  "src/record-store.js",
+  "src/file-protection.js",
+  "public/recovery.js",
   "public/app.js",
 ]
   .map((file) => withoutImports(read(file)))

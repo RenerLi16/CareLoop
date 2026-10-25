@@ -11,6 +11,13 @@ export const ASSETS = {
   "/scheduler.js": ["src/scheduler.js", "text/javascript; charset=utf-8"],
   "/instructions.js": ["src/instructions.js", "text/javascript; charset=utf-8"],
   "/care-plan.js": ["src/care-plan.js", "text/javascript; charset=utf-8"],
+  "/record.js": ["src/record.js", "text/javascript; charset=utf-8"],
+  "/record-store.js": ["src/record-store.js", "text/javascript; charset=utf-8"],
+  "/file-protection.js": [
+    "src/file-protection.js",
+    "text/javascript; charset=utf-8",
+  ],
+  "/recovery.js": ["public/recovery.js", "text/javascript; charset=utf-8"],
 };
 export const sourceAsset = (route) =>
   readFileSync(path.join(root, ASSETS[route][0]));

@@ -89,6 +89,9 @@
             <button class="act" id="btnDemo">Load sample</button>
             <button class="act" id="btnParse">Read it</button>
             <button class="ghost" id="btnManual">Enter manually</button>
+            <button class="ghost" id="btnReloadPlan" hidden>
+              Reopen saved plan
+            </button>
           </div>
           <div class="small" id="parseStatus" style="margin-top: 8px"></div>
         </div>
@@ -209,7 +212,12 @@
             >
               Red flags
             </h3>
-            <div id="flagList" class="small">—</div>
+            <textarea
+              id="fWarnings"
+              rows="3"
+              aria-label="Clinician warning instructions"
+              placeholder="Instructions from the discharge sheet"
+            ></textarea>
 
             <hr />
             <button class="act" id="btnGenerate">Compile schedule</button>
@@ -250,7 +258,7 @@
 
       <section class="panel" id="p-team">
         <h2>Care team load</h2>
-        <p class="sub">Who is actually carrying this.</p>
+        <p class="sub">Assignments and their completion.</p>
         <div class="card" id="teamCard">
           <span class="small">Compile a plan first.</span>
         </div>
@@ -262,6 +270,15 @@
             exist. Burden stays invisible until someone breaks.
           </div>
         </div>
+        <details class="card">
+          <summary>Edit caregivers</summary>
+          <div id="caregiverList"></div>
+          <form id="caregiverAdd" class="caregiver-edit">
+            <label>Name<input name="name" required maxlength="100" /></label
+            ><label>Relationship<input name="rel" maxlength="100" /></label
+            ><button class="act" type="submit">Add caregiver</button>
+          </form>
+        </details>
       </section>
 
       <section class="panel" id="p-about">
@@ -361,19 +378,27 @@
             file.
           </p>
           <p class="small" style="margin: 8px 0 0">
-            Runs on one device. No server, no account, no patient data leaves
-            the browser. A judge can open the file and exercise every screen.
+            Records stay in this browser. Downloaded backups are encrypted with
+            your passphrase. Clearing browser data deletes the working record;
+            keep a backup. Caregiver names are local labels, not verified
+            identities.
           </p>
         </div>
 
         <hr />
         <div class="card">
           <h3 style="font-size: 14px; color: var(--navy); margin: 0 0 8px">
-            Demo controls
+            Data and demo controls
           </h3>
           <div style="display: flex; gap: 8px; flex-wrap: wrap">
             <button class="ghost" id="btnSeed">Reload sample family</button>
-            <button class="ghost" id="btnReset">Reset all data</button>
+            <button class="ghost" id="btnBackup">Save encrypted backup</button
+            ><label class="backup-file"
+              >Restore backup<input
+                id="backupImport"
+                type="file"
+                accept=".json,application/json" /></label
+            ><button class="ghost" id="btnReset">Delete care record</button>
           </div>
         </div>
       </section>

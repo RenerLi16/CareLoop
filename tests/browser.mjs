@@ -9,6 +9,14 @@ const server = spawn(process.execPath, ["src/server.js"], {
   env: { ...process.env, PORT: "0" },
   stdio: ["ignore", "pipe", "inherit"],
 });
+async function finishRecord(page) {
+  await page.locator("#task-dialog").waitFor();
+  await page
+    .locator('#record-form [name="recordedBy"]')
+    .selectOption({ index: 1 });
+  await page.locator('#record-form button[type="submit"]').click();
+  await page.locator("#task-dialog").waitFor({ state: "detached" });
+}
 let browser;
 try {
   const url = await new Promise((resolve, reject) => {
@@ -71,6 +79,7 @@ try {
   if (await page.locator("#ackUnread").count())
     await page.locator("#ackUnread").check();
   await page.locator("#btnGenerate").click();
+  await page.locator("#p-schedule.on").waitFor();
   const state = () =>
     page.evaluate(() =>
       JSON.parse(localStorage.getItem("careloop_instructor_resolver_v1")),
@@ -109,6 +118,7 @@ try {
     .first()
     .getAttribute("data-done");
   await page.locator("#taskList [data-done]").first().click();
+  await finishRecord(page);
   const completed = (await state()).tasks.find((t) => t.id === doneId);
   assert.equal(completed.status, "done");
   await page
@@ -153,6 +163,7 @@ try {
   // Changes can be reviewed before the following day's first recorded dose.
   await page.clock.setFixedTime(new Date("2026-10-26T07:00:00"));
   await page.locator("#btnGenerate").click();
+  await page.locator("#p-schedule.on").waitFor();
   saved = await state();
   assert.equal(saved.patient.name, "Fictional conflict test");
   assert.equal(saved.schedule.ok, true);
@@ -167,6 +178,7 @@ try {
   await page.locator(".mDose").fill("10 mg");
   await page.locator(".mFreq").selectOption("once daily");
   await page.locator("#btnGenerate").click();
+  await page.locator("#p-schedule.on").waitFor();
   assert.equal(await page.evaluate(() => window.injected), undefined);
   assert.equal(await page.locator("#scheduleBody img").count(), 0);
   await page.reload();
@@ -199,6 +211,14 @@ try {
     };
   });
   await page.locator("#btnNextDone").click();
+  await page
+    .locator('#record-form [name="recordedBy"]')
+    .selectOption({ index: 1 });
+  await page.locator('#record-form button[type="submit"]').click();
+  await page
+    .locator("#record-error")
+    .filter({ hasText: /full|unavailable/ })
+    .waitFor();
   assert.match(
     await page.locator("#saveStatus").innerText(),
     /could not be saved/,
@@ -207,6 +227,7 @@ try {
   await page.evaluate(() => {
     Storage.prototype.setItem = window.originalSetItem;
   });
+  await page.locator("#task-dialog [data-cancel]").click();
   // Cached app files can reopen offline; care records remain in localStorage.
   await page.evaluate(async () => {
     await navigator.serviceWorker.ready;
@@ -233,6 +254,7 @@ try {
   if (await standalone.locator("#ackUnread").count())
     await standalone.locator("#ackUnread").check();
   await standalone.locator("#btnGenerate").click();
+  await standalone.locator("#p-schedule.on").waitFor();
   assert.match(
     await standalone.locator("#scheduleBody").innerText(),
     /Automatically resolved/,

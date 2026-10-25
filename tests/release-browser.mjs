@@ -47,6 +47,7 @@ try {
   await page.locator("#fWeigh").uncheck();
   await page.locator("#fSymptoms").uncheck();
   await page.locator("#btnGenerate").click();
+  await page.locator("#p-schedule.on").waitFor();
   let record = await page.evaluate(() =>
     JSON.parse(localStorage.getItem("careloop_instructor_resolver_v1")),
   );
@@ -72,6 +73,7 @@ try {
   await page.locator("#fWeigh").uncheck();
   await page.locator("#fSymptoms").uncheck();
   await page.locator("#btnGenerate").click();
+  await page.locator("#p-schedule.on").waitFor();
   record = await page.evaluate(() =>
     JSON.parse(localStorage.getItem("careloop_instructor_resolver_v1")),
   );
