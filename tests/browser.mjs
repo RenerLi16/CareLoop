@@ -66,8 +66,10 @@ try {
   );
   assert.equal(
     await page.locator(".mTarget").nth(2).inputValue(),
-    "furosemide",
+    "Furosemide",
   );
+  if (await page.locator("#ackUnread").count())
+    await page.locator("#ackUnread").check();
   await page.locator("#btnGenerate").click();
   const state = () =>
     page.evaluate(() =>
@@ -139,8 +141,17 @@ try {
     /Not saved|No schedule/,
   );
   assert.deepEqual(await state(), before);
-  // Fix the entered frequency, then the schedule can be placed and explained.
+  // A revised timetable cannot move around a dose already recorded today.
+
   await page.locator(".mFreq").nth(1).selectOption("once daily");
+  await page.locator("#btnGenerate").click();
+  assert.match(
+    await page.locator("#genStatus").innerText(),
+    /already recorded today/,
+  );
+  assert.deepEqual(await state(), before);
+  // Changes can be reviewed before the following day's first recorded dose.
+  await page.clock.setFixedTime(new Date("2026-10-26T07:00:00"));
   await page.locator("#btnGenerate").click();
   saved = await state();
   assert.equal(saved.patient.name, "Fictional conflict test");
@@ -219,6 +230,8 @@ try {
   await standalone.locator('nav [data-t="import"]').click();
   await standalone.locator("#btnDemo").click();
   await standalone.locator("#btnParse").click();
+  if (await standalone.locator("#ackUnread").count())
+    await standalone.locator("#ackUnread").check();
   await standalone.locator("#btnGenerate").click();
   assert.match(
     await standalone.locator("#scheduleBody").innerText(),

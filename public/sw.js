@@ -1,6 +1,6 @@
-// Replaces the previous app shell without reading or deleting any care database.
-const CACHE = "careloop-instructor-resolver-1";
-const FILES = ["/", "/style.css", "/app.js", "/scheduler.js"];
+// Cache application files only. Records stay in browser storage.
+const CACHE = "careloop-release-VERSION";
+const FILES = /* ASSET_LIST */ [];
 self.addEventListener("install", (event) =>
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(FILES))),
 );
@@ -10,8 +10,11 @@ self.addEventListener("activate", (event) =>
       for (const key of await caches.keys())
         if (
           key !== CACHE &&
-          (key.startsWith("careloop-shell-") ||
-            key.startsWith("careloop-instructor-resolver-"))
+          [
+            "careloop-release-",
+            "careloop-shell-",
+            "careloop-instructor-resolver-",
+          ].some((prefix) => key.startsWith(prefix))
         )
           await caches.delete(key);
       await self.clients.claim();
@@ -28,6 +31,11 @@ self.addEventListener("fetch", (event) => {
   )
     return;
   event.respondWith(
-    fetch(event.request).catch(() => caches.match(url.pathname)),
+    fetch(event.request)
+      .then(async (response) => {
+        if (response.ok) return response;
+        return (await caches.match(url.pathname)) || response;
+      })
+      .catch(() => caches.match(url.pathname)),
   );
 });

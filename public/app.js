@@ -4,6 +4,8 @@ import {
   DEFAULT_MEALS,
   FREQUENCIES,
 } from "/scheduler.js";
+import { parseInstructions } from "/instructions.js";
+import { generatePlanTasks, preparePlanTasks } from "/care-plan.js";
 
 /* =========================================================================
    CareLoop — single-file prototype
@@ -60,18 +62,10 @@ function compileSchedule(meds, requested = {}) {
   return autoResolve(meds, S.meals || DEFAULT_MEALS, requested);
 }
 function rebuildTasks(candidate) {
-  const old = new Map(S.tasks.map((task) => [task.id, task]));
-  const tasks = generateTasks(candidate, 30).map((task) => {
-    const prior = old.get(task.id);
-    if (prior && prior.status !== "todo") return { ...prior };
-    return prior ? { ...task, who: prior.who } : task;
-  });
-  const ids = new Set(tasks.map((task) => task.id));
-  candidate.history = [
-    ...(S.history || []),
-    ...S.tasks.filter((task) => task.status !== "todo" && !ids.has(task.id)),
-  ];
-  return tasks;
+  const result = preparePlanTasks(S, candidate, localISO(new Date()));
+  if (!result.ok) throw new Error(result.errors.join("\n"));
+  candidate.history = result.history;
+  return result.tasks;
 }
 function resolutionHTML(schedule) {
   if (!schedule.ok)
@@ -83,72 +77,7 @@ function resolutionHTML(schedule) {
     : '<div class="small">The entered timing rules fit. No changes needed.</div>';
 }
 function generateTasks(state, days = 30) {
-  if (!state.patient || !state.schedule) return [];
-  const out = [];
-  const start = new Date(state.patient.dischargeDate + "T00:00:00");
-  const team = state.team.length
-    ? state.team
-    : [{ id: "t1", name: "Me", rel: "self" }];
-
-  for (let d = 0; d < days; d++) {
-    const dt = new Date(start);
-    dt.setDate(dt.getDate() + d);
-    const iso = localISO(dt);
-    state.meds.forEach((m, mi) => {
-      (state.schedule.times[m.id] || []).forEach((tm, idx) => {
-        out.push({
-          id: `${iso}-${m.id}-${idx}`,
-          date: iso,
-          time: tm,
-          kind: "med",
-          label: `${esc(m.drug)} ${esc(m.dose)}`,
-          medId: m.id,
-          who: team[(d + mi + idx) % team.length].id,
-          status: "todo",
-          doneAt: null,
-        });
-      });
-    });
-    if (state.weigh)
-      out.push({
-        id: `${iso}-w`,
-        date: iso,
-        time: "08:30",
-        kind: "weight",
-        label: "Morning weight",
-        who: team[d % team.length].id,
-        status: "todo",
-        doneAt: null,
-      });
-    if (state.symptoms)
-      out.push({
-        id: `${iso}-s`,
-        date: iso,
-        time: "19:00",
-        kind: "symptom",
-        label: "Daily symptom check",
-        who: team[(d + 1) % team.length].id,
-        status: "todo",
-        doneAt: null,
-      });
-  }
-
-  (state.followups || []).forEach((f) => {
-    const dt = new Date(start);
-    dt.setDate(dt.getDate() + Number(f.days || 7));
-    out.push({
-      id: `fu-${f.id}`,
-      date: localISO(dt),
-      time: "09:00",
-      kind: "visit",
-      label: `Book ${f.who} follow-up`,
-      who: team[0].id,
-      status: "todo",
-      doneAt: null,
-    });
-  });
-
-  return out.sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
+  return generatePlanTasks(state, days);
 }
 
 /* =======================================================================
@@ -215,9 +144,19 @@ function findMissed(state, nowMin, graceMin = 60) {
   const today = localISO(new Date());
   return state.tasks
     .filter((t) => t.kind === "med" && t.status === "todo" && t.date === today)
-    .filter((t) => nowMin - toMin(t.time) > graceMin)
+    .filter(
+      (t) =>
+        (Date.now() -
+          (t.dueAt ?? new Date(t.date + "T" + t.time + ":00").getTime())) /
+          60000 >
+        graceMin,
+    )
     .map((t) => {
-      const late = nowMin - toMin(t.time);
+      const late = Math.floor(
+        (Date.now() -
+          (t.dueAt ?? new Date(t.date + "T" + t.time + ":00").getTime())) /
+          60000,
+      );
       return {
         task: t,
         lateMin: late,
@@ -338,128 +277,7 @@ async function readDischarge(text) {
 }
 
 function parseLocal(text) {
-  const t = text.replace(/\r/g, "");
-  const meds = [],
-    unread = [];
-  let inMed = false;
-
-  t.split("\n").forEach((line) => {
-    const L = line.trim();
-    if (/^MEDICATIONS/i.test(L)) {
-      inMed = true;
-      return;
-    }
-    if (/^(FOLLOW|MONITORING|CALL|GO TO)/i.test(L)) {
-      inMed = false;
-      return;
-    }
-    if (!inMed || !L) return;
-
-    const m = L.match(
-      /^(.+?)\s+(\d+(?:\.\d+)?\s*(?:mg|mcg|g|ml|units?))\b\s*(.*)$/i,
-    );
-    if (!m) {
-      unread.push(L);
-      return;
-    }
-    const rest = (m[3] || "").toLowerCase();
-
-    let freq = "";
-    if (/once daily/.test(rest)) freq = "once daily";
-    else if (/twice daily/.test(rest)) freq = "twice daily";
-    else if (/three times daily/.test(rest)) freq = "three times daily";
-    else if (/every 8 hours/.test(rest)) freq = "every 8 hours";
-    else if (/every 6 hours/.test(rest)) freq = "every 6 hours";
-    else if (/every 12 hours/.test(rest)) freq = "every 12 hours";
-    else if (/at bedtime/.test(rest)) freq = "at bedtime";
-    else if (/in the morning|every morning/.test(rest)) freq = "in the morning";
-
-    if (
-      (!freq || freq === "once daily") &&
-      /in the morning|every morning/.test(rest)
-    )
-      freq = "in the morning";
-
-    let meal = "any";
-    if (/with food|with meals/.test(rest)) meal = "with";
-    else if (/before (food|meals|breakfast)/.test(rest)) meal = "before";
-    else if (/after (food|meals)/.test(rest)) meal = "after";
-
-    let gapH = null,
-      gapTarget = "";
-    const g1 = rest.match(/at least\s+(\d+(?:\.\d+)?)\s*(?:hour|hr)/);
-    if (g1) gapH = +g1[1];
-    const g2 = rest.match(/(\d+(?:\.\d+)?)\s*hours?\s+apart/);
-    if (g2) gapH = +g2[1];
-
-    const target = rest.match(/apart from\s+(.+?)(?=[.;]|$)/i);
-    if (target) gapTarget = target[1].trim();
-    const leftover = rest
-      .replace(/\bby mouth\b/g, "")
-      .replace(
-        /\b(once daily|twice daily|three times daily|every 8 hours|every 6 hours|every 12 hours|at bedtime|in the morning|every morning)\b/g,
-        "",
-      )
-      .replace(
-        /\b(with food|with meals|before food|before meals|before breakfast|after food|after meals)\b/g,
-        "",
-      )
-      .replace(
-        /\bat least\s+\d+(?:\.\d+)?\s*(?:hours?|hrs?)\s+apart(?: from [^.;]+)?/g,
-        "",
-      )
-      .replace(/[\s,.;]+/g, " ")
-      .trim();
-    meds.push({
-      id: "m" + meds.length,
-      drug: m[1].trim(),
-      dose: m[2].trim(),
-      freq,
-      meal,
-      gapH,
-      gapTarget,
-      source: L,
-      issue: leftover ? "Review: " + leftover : "",
-      mealTarget: /before breakfast/.test(rest) ? "breakfast" : "any",
-    });
-  });
-
-  const followups = [];
-  const fm = t.match(/Cardiology in (\d+) days/i);
-  if (fm) followups.push({ id: "f0", who: "Cardiology", days: +fm[1] });
-  const pm = t.match(/Primary care in (\d+) days/i);
-  if (pm) followups.push({ id: "f1", who: "Primary care", days: +pm[1] });
-
-  const flags = [];
-  const block = (t.split(/CALL THE DOCTOR IF/i)[1] || "").split(
-    /GO TO EMERGENCY IF/i,
-  )[0];
-  block.split("\n").forEach((l) => {
-    const s = l.trim();
-    if (s && s.length > 8 && !/^(GO TO|EMERGENCY)/i.test(s))
-      flags.push(s.replace(/\.$/, ""));
-  });
-  const em = t.match(/GO TO EMERGENCY IF([\s\S]*?)$/i);
-  if (em)
-    em[1].split("\n").forEach((l) => {
-      if (l.trim().length > 5) flags.push(l.trim());
-    });
-
-  const nm = t.match(/Patient:\s*([^\n]+?)\s+Age:\s*(\d+)/i);
-  const dm = t.match(/Discharged:\s*([\d-]+)/i);
-
-  return {
-    patient: {
-      name: nm ? nm[1].trim() : "",
-      age: nm ? +nm[2] : "",
-      dischargeDate: dm ? dm[1] : localISO(new Date()),
-      lang: "en",
-    },
-    meds,
-    unread,
-    followups,
-    flags: flags.slice(0, 6),
-  };
+  return parseInstructions(text, localISO(new Date()));
 }
 
 /* =======================================================================
@@ -537,6 +355,12 @@ function renderAll() {
 }
 
 function renderHome() {
+  const warnings = $("#patientWarnings");
+  warnings.hidden = !S.patient || !S.flags.length;
+  warnings.innerHTML = S.flags.length
+    ? "<b>From the discharge instructions</b>" +
+      S.flags.map((flag) => `<div>${esc(flag)}</div>`).join("")
+    : "";
   $("#hdrPat").textContent = S.patient
     ? `${S.patient.name} · ${S.patient.age} · discharged ${S.patient.dischargeDate}`
     : "";
@@ -648,9 +472,27 @@ function renderSchedule() {
     return;
   }
   const bad = S.schedule.bad || {};
+  const scheduleDate = S.tasks.some(
+    (task) => task.date === localISO(new Date()),
+  )
+    ? localISO(new Date())
+    : S.patient.dischargeDate;
+  const displayTimes = Object.fromEntries(
+    S.meds.map((m) => [
+      m.id,
+      S.tasks
+        .filter(
+          (task) =>
+            task.kind === "med" &&
+            task.medId === m.id &&
+            task.date === scheduleDate,
+        )
+        .map((task) => task.time),
+    ]),
+  );
 
   const pins = [];
-  Object.entries(S.schedule.times).forEach(([medId, ts]) => {
+  Object.entries(displayTimes).forEach(([medId, ts]) => {
     ts.forEach((t) => {
       const left = ((toMin(t) / 1440) * 100).toFixed(2);
       pins.push(`<div class="pin ${bad[medId] ? "bad" : ""}" style="left:${left}%">
@@ -664,7 +506,7 @@ function renderSchedule() {
 
   const rows = S.meds
     .map((m) => {
-      const ts = (S.schedule.times[m.id] || []).join(", ") || "—";
+      const ts = (displayTimes[m.id] || []).join(", ") || "—";
       return `<tr class="${bad[m.id] ? "conflict" : ""}">
       <td><b>${esc(m.drug)}</b><div class="small">${esc(m.dose)}</div></td>
       <td>${esc(m.freq)}</td>
@@ -678,7 +520,7 @@ function renderSchedule() {
   host.innerHTML = `
     <div class="tl">${lbl}${pins.join("")}</div>
     <div class="small" style="margin:8px 0 12px">
-      Entered rules, scheduled together.
+      Schedule for ${esc(scheduleDate)}.
       ${viol.length ? '<b style="color:#b3261e">Red pins break a rule.</b>' : "Supported rules satisfied."}</div>
     ${resolutionHTML(S.schedule)}
     <div class="card">
@@ -703,7 +545,12 @@ function renderSchedule() {
       return;
     }
     const candidate = { ...S, schedule: resolved };
-    candidate.tasks = rebuildTasks(candidate);
+    try {
+      candidate.tasks = rebuildTasks(candidate);
+    } catch (error) {
+      $("#recompMsg").textContent = error.message;
+      return;
+    }
     S = candidate;
     if (save()) renderAll();
   };
@@ -856,6 +703,11 @@ $$("nav button").forEach(
       $$(".panel").forEach((p) => p.classList.remove("on"));
       b.classList.add("on");
       $("#p-" + b.dataset.t).classList.add("on");
+      if (b.dataset.t === "home") renderHome();
+      if (b.dataset.t === "schedule") {
+        renderSchedule();
+        scrollTables();
+      }
     }),
 );
 
@@ -949,7 +801,7 @@ function addMedRow(m = {}) {
     <td><input type="text" class="mDrug" value="${esc(m.drug || "")}" placeholder="Furosemide">${m.issue ? `<div class="small">${esc(m.issue)}<label class="ck"><input class="mReviewed" type="checkbox">Reviewed</label></div>` : ""}</td>
     <td><input type="text" class="mDose" value="${esc(m.dose || "")}" placeholder="40 mg"></td>
     <td><select class="mFreq"><option value="" ${!m.freq ? "selected" : ""}>Choose frequency</option>${FREQ_OPTS.map((f) => `<option ${f === m.freq ? "selected" : ""}>${esc(f)}</option>`).join("")}</select></td>
-    <td><select class="mMeal">${MEAL_OPTS.map(([v, l]) => `<option value="${v}" ${v === (m.meal || "any") ? "selected" : ""}>${l}</option>`).join("")}</select></td>
+    <td><select class="mMeal">${MEAL_OPTS.map(([v, l]) => `<option value="${v}" ${v === (m.meal || "any") ? "selected" : ""}>${esc(m.mealTarget && m.mealTarget !== "any" && v === m.meal ? l.replace("food", m.mealTarget) : l)}</option>`).join("")}</select></td>
     <td><input type="text" class="mTarget" value="${esc(m.gapTarget || "")}" placeholder="All other medicines"></td>
     <td><input type="number" class="mGap" value="${esc(m.gapH ?? "")}" placeholder="—" min="0" step="1"></td>
     <td><button class="mini remove-row" type="button" aria-label="Remove row">×</button></td>`;
@@ -959,6 +811,10 @@ document.addEventListener("click", (event) => {
   if (event.target.closest(".remove-row")) event.target.closest("tr").remove();
 });
 $("#btnAddMed").onclick = () => addMedRow();
+$("#medTable").addEventListener("change", (event) => {
+  if (event.target.matches(".mMeal"))
+    event.target.closest("tr").dataset.mealTarget = "any";
+});
 
 function addFuRow(f = {}) {
   const tr = document.createElement("tr");
@@ -1065,7 +921,12 @@ $("#btnGenerate").onclick = () => {
       { id: "t2", name: "Minh", rel: "son" },
       { id: "t3", name: "Amy", rel: "granddaughter" },
     ];
-  candidate.tasks = rebuildTasks(candidate);
+  try {
+    candidate.tasks = rebuildTasks(candidate);
+  } catch (error) {
+    $("#genStatus").textContent = error.message;
+    return;
+  }
   S = candidate;
   if (!save()) return;
   $("#genStatus").textContent = "";
@@ -1132,3 +993,20 @@ function scrollTables() {
   }
 }
 scrollTables();
+
+let lastDisplayedDate = localISO(new Date());
+function refreshClock() {
+  if (!S.patient) return;
+  const date = localISO(new Date());
+  renderHome();
+  if (date !== lastDisplayedDate) {
+    renderSchedule();
+    scrollTables();
+    lastDisplayedDate = date;
+  }
+}
+setInterval(refreshClock, 30000);
+window.addEventListener("focus", refreshClock);
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) refreshClock();
+});

@@ -1,21 +1,14 @@
 import http from "node:http";
-import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import path from "node:path";
-const root = fileURLToPath(new URL("../", import.meta.url));
-const files = {
-  "/": ["public/index.html", "text/html; charset=utf-8"],
-  "/style.css": ["public/style.css", "text/css; charset=utf-8"],
-  "/app.js": ["public/app.js", "text/javascript; charset=utf-8"],
-  "/scheduler.js": ["src/scheduler.js", "text/javascript; charset=utf-8"],
-  "/sw.js": ["public/sw.js", "text/javascript; charset=utf-8"],
-};
+import { ASSETS, sourceAsset, serviceWorker } from "./assets.js";
+const staticDirectory = process.env.STATIC_DIR
+  ? path.resolve(process.env.STATIC_DIR)
+  : null;
 export const server = http.createServer((req, res) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("Referrer-Policy", "no-referrer");
   res.setHeader("Cache-Control", "no-cache");
-  // The instructor's compact markup uses inline styles; script remains external.
   res.setHeader(
     "Content-Security-Policy",
     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
@@ -25,30 +18,36 @@ export const server = http.createServer((req, res) => {
     res.end("No care-data uploads.");
     return;
   }
-  const route = new URL(req.url, "http://localhost").pathname;
-  const file = files[route];
-  if (!file) {
+  let route;
+  try {
+    route = new URL(req.url, "http://localhost").pathname;
+  } catch {
+    res.writeHead(400);
+    res.end("Invalid address.");
+    return;
+  }
+  const file = ASSETS[route];
+  if (!file && route !== "/sw.js") {
     res.writeHead(404);
     res.end("Not found.");
     return;
   }
   try {
-    let body = readFileSync(path.join(root, ...file[0].split("/")));
-    if (route === "/sw.js") {
-      res.setHeader("Service-Worker-Allowed", "/");
-      const hash = createHash("sha256");
-      for (const [file] of Object.values(files))
-        hash.update(readFileSync(path.join(root, file)));
-      body = Buffer.from(
-        body
-          .toString()
-          .replace(
-            "careloop-instructor-resolver-1",
-            "careloop-instructor-resolver-" + hash.digest("hex").slice(0, 16),
+    const body = staticDirectory
+      ? readFileSync(
+          path.join(
+            staticDirectory,
+            route === "/" ? "index.html" : route.slice(1),
           ),
-      );
-    }
-    res.writeHead(200, { "Content-Type": file[1] });
+        )
+      : route === "/sw.js"
+        ? serviceWorker()
+        : sourceAsset(route);
+    if (route === "/sw.js") res.setHeader("Service-Worker-Allowed", "/");
+    res.writeHead(200, {
+      "Content-Type":
+        route === "/sw.js" ? "text/javascript; charset=utf-8" : file[1],
+    });
     res.end(req.method === "HEAD" ? undefined : body);
   } catch {
     res.writeHead(500);
