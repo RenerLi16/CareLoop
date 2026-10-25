@@ -1,0 +1,21 @@
+{
+  "name": "careloop",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "A shared discharge-to-routine care planner",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test": "node --test tests/*.test.js",
+    "format": "prettier --write src public tests package.json README.md .github",
+    "format:check": "prettier --check src public tests package.json README.md .github",
+    "test:browser": "node tests/browser.mjs"
+  },
+  "devDependencies": {
+    "prettier": "^3.6.2"
+  }
+}
