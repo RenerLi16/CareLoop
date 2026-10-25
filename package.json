@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Instructor CareLoop prototype with automatic scheduling resolution",
+  "description": "CareLoop blue app with local care records and automatic scheduling",
   "engines": {
     "node": ">=22.13"
   },

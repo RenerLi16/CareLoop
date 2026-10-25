@@ -5,7 +5,11 @@ import {
   FREQUENCIES,
 } from "/scheduler.js";
 import { parseInstructions } from "/instructions.js";
-import { generatePlanTasks, preparePlanTasks } from "/care-plan.js";
+import {
+  generatePlanTasks,
+  preparePlanTasks,
+  validateDatedTasks,
+} from "/care-plan.js";
 import {
   RECORD_KEY,
   emptyRecord,
@@ -18,8 +22,8 @@ import { createRecordStore } from "/record-store.js";
 import { createRecovery } from "/recovery.js";
 
 /* =========================================================================
-   CareLoop — single-file prototype
-   The parser, the compiler and every safety check are hand-written and deterministic.
+   CareLoop — compact blue interface
+   Parsing, scheduling and record checks run deterministically in the browser.
    ========================================================================= */
 
 const LS = RECORD_KEY;
@@ -704,7 +708,7 @@ function renderTasks() {
           const bad = v.some((x) => x.a?.id === t.id || x.b?.id === t.id);
           return `<tr class="${bad ? "conflict" : ""}">
           <td class="mono">${t.time}</td>
-          <td>${esc(t.label)}${t.kind === "visit" ? ' <span class="small">(appointment)</span>' : ""}</td>
+          <td>${esc(t.label)}${t.doneAt != null ? `<div class="small">Recorded ${esc(new Date(t.doneAt).toLocaleString())}${t.recordedByName ? " · " + esc(t.recordedByName) : ""}</div>` : ""}${t.kind === "visit" ? ' <span class="small">(appointment)</span>' : ""}</td>
           <td><select data-who="${esc(t.id)}"><option value="" ${!t.who ? "selected" : ""}>Unassigned</option>${S.team
             .filter((person) => !person.archived || person.id === t.who)
             .map(
@@ -919,10 +923,11 @@ $("#btnAddFu").onclick = () => addFuRow();
 $("#btnGenerate").onclick = async () => {
   if (busy) return;
   if (draftToken !== lastToken) {
-    notify(
-      "Another tab changed the record. Reload the saved plan before saving this draft.",
-      true,
-    );
+    const message =
+      "Another tab changed the record. Reload the saved plan before saving this draft.";
+    notify(message, true);
+    $("#genStatus").textContent = message;
+    $("#genStatus").scrollIntoView({ block: "nearest" });
     return;
   }
   const name = $("#fName").value.trim();
@@ -1044,8 +1049,20 @@ $("#btnSeed").onclick = async () => {
     notify("Fictional sample loaded.");
   }
 };
-$("#btnReset").onclick = () => recovery.openDelete();
-$("#btnBackup").onclick = () => recovery.openExport();
+$("#btnReset").onclick = () => {
+  try {
+    recovery.openDelete();
+  } catch (error) {
+    notify(error.message, true);
+  }
+};
+$("#btnBackup").onclick = () => {
+  try {
+    recovery.openExport();
+  } catch (error) {
+    notify(error.message, true);
+  }
+};
 $("#backupImport").onchange = (event) => {
   const file = event.target.files[0];
   event.target.value = "";
@@ -1126,7 +1143,7 @@ function openTask(id, intent = null) {
   dialog.id = "task-dialog";
   dialog.setAttribute("aria-labelledby", "record-title");
   const active = S.team.filter((person) => !person.archived);
-  dialog.innerHTML = `<form id="record-form"><h2 id="record-title">${esc(task.label)}</h2><p class="small">Scheduled ${esc(task.date)} · ${esc(task.time)}</p><label class="field">Status<select name="status"><option value="done">Completed</option><option value="skip">Skipped</option><option value="todo">Pending</option></select></label><label class="field">Recorded by<select name="recordedBy" required><option value="">Choose a name</option>${active.map((person) => `<option value="${esc(person.id)}">${esc(person.name)}</option>`).join("")}</select></label><label class="field" id="actual-field">Actual time (device time)<input name="actualAt" type="datetime-local" required value="${esc(displayTime)}"></label><label class="field" id="clock-choice" hidden>Repeated clock time<select name="occurrence"></select></label><label class="field">${initialStatus === "todo" ? "Note (optional)" : "Reason for correction"}<textarea name="note" rows="2" maxlength="2000">${esc(task.note || "")}</textarea></label>${task.corrections?.length ? `<details><summary>Corrections (${task.corrections.length})</summary>${task.corrections.map((change) => `<p class="small">${esc(new Date(change.at).toLocaleString())} · ${esc(change.by)}: ${esc(change.before.status)} → ${esc(change.after.status)}<br>${esc(change.reason)}</p>`).join("")}</details>` : ""}<p id="record-error" role="alert"></p><div class="dialog-actions"><button class="act" type="submit">Save record</button><button class="ghost" type="button" data-cancel>Cancel</button></div></form>`;
+  dialog.innerHTML = `<form id="record-form"><h2 id="record-title">${esc(task.label)}</h2><p class="small">Scheduled ${esc(task.date)} · ${esc(task.time)}</p><label class="field">Status<select name="status"><option value="done">Completed</option><option value="skip">Skipped</option><option value="todo">Pending</option></select></label><label class="field">Recorded by<select name="recordedBy" required><option value="">Choose a name</option>${active.map((person) => `<option value="${esc(person.id)}">${esc(person.name)}</option>`).join("")}</select></label><label class="field" id="actual-field">Actual time (device time)<input name="actualAt" type="datetime-local" required value="${esc(displayTime)}"></label><label class="field" id="clock-choice" hidden>Repeated clock time<select name="occurrence"></select></label><label class="field">${initialStatus === "todo" ? "Note (optional)" : "Reason for correction"}<textarea name="note" rows="2" maxlength="2000">${esc(task.note || "")}</textarea></label>${task.corrections?.length ? `<details><summary>Corrections (${task.corrections.length})</summary>${task.corrections.map((change) => `<p class="small">${esc(new Date(change.at).toLocaleString())} · ${esc(change.by)}: ${esc(change.before.status)} → ${esc(change.after.status)}<br>${esc(change.before.doneAt ? new Date(change.before.doneAt).toLocaleString() : "No recorded time")} → ${esc(change.after.doneAt ? new Date(change.after.doneAt).toLocaleString() : "No recorded time")}<br>${esc(change.reason)}</p>`).join("")}</details>` : ""}<p id="record-error" role="alert"></p><div class="dialog-actions"><button class="act" type="submit">Save record</button><button class="ghost" type="button" data-cancel>Cancel</button></div></form>`;
   document.body.append(dialog);
   const form = dialog.querySelector("form");
   form.elements.status.value =
@@ -1154,7 +1171,12 @@ function openTask(id, intent = null) {
         originalTime - (originalTime % 60000),
       );
   }
-  form.addEventListener("change", updateTime);
+  form.elements.note.addEventListener("input", () => {
+    form.elements.note.dataset.edited = "true";
+  });
+  form.addEventListener("change", (event) => {
+    if (["status", "actualAt"].includes(event.target.name)) updateTime();
+  });
   updateTime();
   dialog.querySelector("[data-cancel]").onclick = () => dialog.close();
   dialog.addEventListener("close", () => dialog.remove());
@@ -1170,15 +1192,28 @@ function openTask(id, intent = null) {
         );
       const input = form.elements.actualAt.value,
         candidates = timeCandidates(input);
-      let actualAt =
-        input === displayTime
+      const chosenTime =
+        candidates.length > 1
+          ? Number(form.elements.occurrence.value)
+          : candidates[0];
+      const actualAt =
+        input === displayTime &&
+        chosenTime === originalTime - (originalTime % 60000)
           ? originalTime
-          : candidates.length === 1
-            ? candidates[0]
-            : Number(form.elements.occurrence.value);
+          : chosenTime;
       if (form.elements.status.value !== "todo" && !candidates.length)
         throw new Error(
           "This time does not exist in the device’s clock. Enter the actual time.",
+        );
+      if (
+        form.elements.status.value !== "todo" &&
+        validateDatedTasks(
+          S,
+          S.tasks.filter((task) => task.date >= localISO(new Date())),
+        ).length
+      )
+        throw new Error(
+          "The saved timetable needs review. Auto-resolve the saved plan before recording; existing records have not changed.",
         );
       const candidate = recordTask(S, {
         id,
@@ -1186,6 +1221,11 @@ function openTask(id, intent = null) {
         actualAt,
         recordedBy: form.elements.recordedBy.value,
         note: form.elements.note.value,
+        reason:
+          initialStatus === "todo" ||
+          form.elements.note.dataset.edited === "true"
+            ? form.elements.note.value
+            : "",
       });
       if (await save(candidate, token)) {
         dialog.close();

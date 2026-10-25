@@ -187,3 +187,28 @@ test("encrypted backups round-trip without revealing record text and reject a wr
     /Could not unlock/,
   );
 });
+
+test("a new correction needs its own reason even when an older note exists", () => {
+  const r = fixture(),
+    first = recordTask(r, { ...patch(r), note: "Original note" }, now);
+  assert.throws(
+    () =>
+      recordTask(
+        first,
+        { ...patch(first), status: "todo", note: "Original note", reason: "" },
+        now,
+      ),
+    /reason/,
+  );
+  const next = recordTask(
+    first,
+    {
+      ...patch(first),
+      status: "todo",
+      note: "Original note",
+      reason: "Recorded the wrong task",
+    },
+    now,
+  );
+  assert.equal(next.tasks[0].corrections[0].reason, "Recorded the wrong task");
+});

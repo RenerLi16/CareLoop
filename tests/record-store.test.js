@@ -61,6 +61,6 @@ test("failed browser storage writes do not claim a new revision was saved", asyn
 });
 test("unsupported saving environments fail closed rather than using an unsafe fallback", async () => {
   const store = createRecordStore(storage(), null);
-  await assert.rejects(store.replace(emptyRecord(), null), /Web Locks/);
+  await assert.rejects(store.replace(emptyRecord(), null), /Safe saving/);
   assert.equal(store.read().token, null);
 });

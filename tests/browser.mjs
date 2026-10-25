@@ -48,10 +48,7 @@ try {
     (await page.request.post(url, { data: "fictional test" })).status(),
     405,
   );
-  assert.equal(
-    (await page.request.get(url + "/archive/bedside-app/README.md")).status(),
-    404,
-  );
+  assert.equal((await page.request.get(url + "/package.json")).status(), 404);
   assert.equal(await page.locator("nav button").count(), 6);
   await page
     .getByRole("button", { name: "Read Discharge", exact: true })

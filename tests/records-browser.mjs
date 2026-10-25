@@ -281,6 +281,44 @@ try {
   await confirmRestore(fresh);
   await fresh.locator("#recovery-dialog").waitFor({ state: "detached" });
   assert.equal((await snapshot(fresh)).patient.name, "Fictional Record Test");
+  // Real browser Web Locks serialize simultaneous writers from separate tabs.
+  const raceToken = await fresh.evaluate(
+      (key) => localStorage.getItem(key),
+      key,
+    ),
+    raceTab = await freshContext.newPage();
+  await raceTab.goto(url);
+  const attempt = async (target, label) =>
+    target.evaluate(
+      async ({ token, label }) => {
+        const { createRecordStore } = await import("/record-store.js");
+        const value = JSON.parse(token);
+        value.flags.push(label);
+        try {
+          await createRecordStore().replace(value, token);
+          return "saved";
+        } catch (error) {
+          return error.name;
+        }
+      },
+      { token: raceToken, label },
+    );
+  const outcomes = await Promise.all([
+    attempt(fresh, "Writer A"),
+    attempt(raceTab, "Writer B"),
+  ]);
+  assert.equal(outcomes.filter((value) => value === "saved").length, 1);
+  assert.equal(
+    outcomes.filter((value) => value === "StaleRecordError").length,
+    1,
+  );
+  const raceState = await snapshot(fresh);
+  assert.equal(
+    raceState.flags.filter((flag) => /^Writer /.test(flag)).length,
+    1,
+  );
+  await raceTab.close();
+  await fresh.reload();
   // The repeated autumn clock hour has an explicit first/second occurrence choice.
   await clickTab(fresh, "tasks");
   await fresh.locator("#dayFilter").selectOption("2026-11-01");

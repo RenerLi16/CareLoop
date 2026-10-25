@@ -1,4 +1,5 @@
 import { DEFAULT_MEALS, checkTimes, FREQUENCIES } from "./scheduler.js";
+import { validateDatedTasks } from "./care-plan.js";
 export const RECORD_KEY = "careloop_instructor_resolver_v1";
 export const BACKUP_FORMAT = "careloop-compact-backup-1";
 export const dayOf = (d) =>
@@ -95,15 +96,22 @@ export function normalizeRecord(input) {
       short(value.rawText, 500000),
   );
   const ids = new Set();
+  const validId = (id) =>
+    short(id) &&
+    /^[A-Za-z0-9_-]+$/.test(id) &&
+    !["__proto__", "constructor", "prototype"].includes(id);
   for (const person of value.team) {
     requireValue(
       person &&
-        short(person.id) &&
+        validId(person.id) &&
         person.id &&
         !ids.has(person.id) &&
         short(person.name) &&
         person.name.trim() &&
         short(person.rel || "", 100),
+    );
+    requireValue(
+      person.archived === undefined || typeof person.archived === "boolean",
     );
     ids.add(person.id);
   }
@@ -111,7 +119,7 @@ export function normalizeRecord(input) {
   for (const med of value.meds) {
     requireValue(
       med &&
-        short(med.id) &&
+        validId(med.id) &&
         med.id &&
         !medIds.has(med.id) &&
         short(med.drug, 200) &&
@@ -229,6 +237,13 @@ export function validateBackup(payload) {
     checkTimes(record.meds, record.schedule.times, record.meals).length === 0,
     "The backup’s timing rules need review before it can be restored.",
   );
+  requireValue(
+    validateDatedTasks(
+      record,
+      record.tasks.filter((task) => task.date >= dayOf(new Date())),
+    ).length === 0,
+    "The backup’s dated timetable needs review before it can be restored.",
+  );
   return record;
 }
 const taskSnapshot = (task) => ({
@@ -279,10 +294,14 @@ export function recordTask(record, patch, now = Date.now()) {
     };
   if (JSON.stringify(before) === JSON.stringify(after)) return next;
   if (task.status !== "todo") {
-    requireValue(note, "Enter a reason for correcting the record.");
+    const reason = String(patch.reason ?? note).trim();
+    requireValue(
+      reason && reason.length <= 2000,
+      "Enter a reason for correcting the record (under 2,000 characters).",
+    );
     task.corrections = [
       ...(task.corrections || []),
-      { at: now, by: person.name, before, after, reason: note },
+      { at: now, by: person.name, before, after, reason },
     ];
   }
   Object.assign(task, after);

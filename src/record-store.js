@@ -22,7 +22,7 @@ export function createRecordStore(
   async function replace(record, expectedToken) {
     if (!locks?.request)
       throw new Error(
-        "Safe saving needs Web Locks. Use a current browser with HTTPS, localhost, or the standalone file.",
+        "Safe saving is unavailable in this browser. Use an updated browser with HTTPS, localhost, or the standalone file.",
       );
     return locks.request("careloop-record-write", { mode: "exclusive" }, () => {
       const current = read();
