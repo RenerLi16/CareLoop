@@ -1762,7 +1762,7 @@ body.setup-active {
 }
 .brand-symbol {
   display: block;
-  object-fit: contain;
+  width: var(--logo-size, 38px);
   border-radius: 9px;
   flex-shrink: 0;
 }
@@ -1849,4 +1849,22 @@ header h1.brand-name {
   .brand-slogan {
     font-size: 9px;
   }
+}
+
+/* Crop the original 750×774 image to (68,55)–(748,735). The colored
+   symbol spans (123,97)–(693,693), giving equal opposite margins. */
+.logo-crop {
+  position: relative;
+  display: block;
+  aspect-ratio: 1;
+  overflow: hidden;
+}
+.logo-crop > img {
+  position: absolute;
+  display: block;
+  width: 110.2941176471%;
+  max-width: none;
+  height: auto;
+  left: -10%;
+  top: -8.0882352941%;
 }
