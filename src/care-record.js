@@ -134,7 +134,7 @@ function patchTask(state, task, patch, now) {
   if (task.status === "done" && task.kind === "symptoms")
     task.value = text(patch.value ?? task.value, "symptoms, or “none”", 2000);
 }
-function validateBackup(backup) {
+export function validateBackup(backup) {
   if (
     !backup ||
     backup.format !== BACKUP_FORMAT ||
@@ -144,10 +144,17 @@ function validateBackup(backup) {
     backup.record.tasks.length > 10000 ||
     !Array.isArray(backup.record.team) ||
     backup.record.team.length > 100 ||
-    !Array.isArray(backup.record.audit)
+    !Array.isArray(backup.record.audit) ||
+    backup.record.audit.length > 10000 ||
+    !Number.isSafeInteger(backup.record.revision) ||
+    backup.record.revision < 0 ||
+    !Number.isSafeInteger(backup.record.version) ||
+    backup.record.version < 0 ||
+    typeof backup.exportedAt !== "string" ||
+    !Number.isFinite(Date.parse(backup.exportedAt))
   )
     fail("This is not a supported bedside backup.");
-  if (JSON.stringify(backup).length > 5000000)
+  if (new TextEncoder().encode(JSON.stringify(backup)).length > 5000000)
     fail("Backup must be under 5 MB.");
   const saved = structuredClone(backup.record);
   saved.profile = checkProfile(saved.profile);
@@ -180,11 +187,36 @@ function validateBackup(backup) {
       !["med", "visit", "weight", "symptoms"].includes(task.kind) ||
       !["todo", "done", "skipped"].includes(task.status) ||
       typeof task.label !== "string" ||
-      (task.actualAt != null && !Number.isFinite(Date.parse(task.actualAt)))
+      task.label.length > 1000 ||
+      (task.note != null &&
+        (typeof task.note !== "string" || task.note.length > 2000)) ||
+      (task.recordedByName != null &&
+        typeof task.recordedByName !== "string") ||
+      (task.kind === "med" && typeof task.medId !== "string") ||
+      (task.actualAt != null &&
+        (typeof task.actualAt !== "string" ||
+          !Number.isFinite(Date.parse(task.actualAt))))
     )
       fail("Backup contains an invalid task.");
     if (task.status !== "todo" && !task.actualAt)
       fail("A completed or skipped task is missing its actual time.");
+    if (
+      task.status === "done" &&
+      task.kind === "weight" &&
+      (!task.value ||
+        !Number.isFinite(task.value.amount) ||
+        task.value.amount <= 0 ||
+        !["kg", "lb"].includes(task.value.unit))
+    )
+      fail("A recorded weight in the backup is invalid.");
+    if (
+      task.status === "done" &&
+      task.kind === "symptoms" &&
+      (typeof task.value !== "string" ||
+        !task.value.trim() ||
+        task.value.length > 2000)
+    )
+      fail("A symptom record in the backup is invalid.");
     ids.add(task.id);
     if (task.who && !member(saved, task.who)) task.who = "";
   }
@@ -194,6 +226,7 @@ function validateBackup(backup) {
         a &&
         typeof a.action === "string" &&
         typeof a.name === "string" &&
+        typeof a.at === "string" &&
         Number.isFinite(Date.parse(a.at)) &&
         (!a.details ||
           (typeof a.details === "string" &&
@@ -256,7 +289,8 @@ export function changeRecord(
     }
     if (state.team.length > 100) fail("Use at most 99 caregiver names.");
     action = "Set up this bedside device";
-  } else if (!state.profile) fail("Set up this device first.");
+  } else if (!state.profile && command.type !== "restore")
+    fail("Set up this device first.");
   else if (command.type === "plan") {
     checkPlan(command.plan);
     const checked = compileChecked(reconcilePlan(state.plan, command.plan));

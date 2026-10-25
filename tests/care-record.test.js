@@ -292,3 +292,38 @@ test("correcting a measured task to skipped clears the measurement and preserves
     unit: "kg",
   });
 });
+
+test("a backup can restore directly into a fresh device without dummy setup", () => {
+  const backup = makeBackup(published(), now);
+  const restored = change(emptyRecord(), { type: "restore", backup });
+  assert.equal(restored.profile.patient, profile.patient);
+  assert.equal(restored.tasks.length, 90);
+  assert.equal(restored.version, 1);
+});
+test("restores reject malformed measurements, revision metadata and timestamps without changing the record", () => {
+  const current = published(),
+    backup = makeBackup(current, now);
+  const badWeight = {
+    ...backup,
+    record: {
+      ...backup.record,
+      tasks: backup.record.tasks.map((t) =>
+        t.kind === "weight"
+          ? {
+              ...t,
+              status: "done",
+              actualAt: now,
+              value: { amount: -1, unit: "kg" },
+            }
+          : t,
+      ),
+    },
+  };
+  for (const bad of [
+    badWeight,
+    { ...backup, exportedAt: "bad" },
+    { ...backup, record: { ...backup.record, revision: -2 } },
+  ])
+    assert.throws(() => change(current, { type: "restore", backup: bad }));
+  assert.equal(current.tasks[0].status, "todo");
+});

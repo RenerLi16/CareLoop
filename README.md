@@ -1,6 +1,6 @@
 # CareLoop — bedside edition
 
-One patient, one tablet, one locally saved care record. This repository is being converted in separate commit stages. **Stages 1–3 are complete: local storage, the bedside interface, and offline installation support.** Final recovery/privacy checks are still to come.
+One patient, one tablet, one locally saved care record. This repository is being converted in separate commit stages. **All four planned implementation stages are complete.** The app uses on-device records, a bedside interface, offline support, and protected backup/recovery. Physical-tablet installation and clinical/user validation remain separate checks.
 
 ## Run locally
 
@@ -33,7 +33,7 @@ The app does not upload care data, run third-party analytics, or send instructio
 - Separate task assignment and “Recorded by” labels, with a snapshot of the recorder’s name preserved in completion history.
 - Local plan publication, actual completion and skip times, weight and symptom entries, corrections, and activity history.
 - Existing conservative parser, meal rules, named medication spacing, exact intervals, impossible-schedule rejection, date/time-zone checks, and history preservation.
-- Client-generated calendar export and a plain-text bedside backup format (`careloop-bedside-1`). Restoring validates data before replacing the record. Backups include caregivers and activity history.
+- Client-generated calendar export and a bedside record format (`careloop-bedside-1`). Stage 4 wraps new backup downloads in encryption; older plaintext bedside backups can still be reviewed and restored. Backups include caregivers and activity history.
 - Local reset removes the active profile, caregivers, plan, tasks, and activity. It does not delete downloaded files or a previous server database.
 
 Calendar export asks before creating a file. Importing that file into a cloud calendar can copy care details outside this device. It is a snapshot; changes do not synchronize into previously imported events.
@@ -83,20 +83,34 @@ The host must serve JavaScript and the manifest with the correct MIME types, all
 
 After changing app files, rebuild and deploy the full folder together. Existing open windows keep their installed version. Finish any unsaved work, close all CareLoop windows, and reopen to activate a downloaded update.
 
+## What Stage 4 includes
+
+- **Encrypted backup downloads by default.** Choose and repeat a passphrase of at least 12 characters. The file is encrypted on the device using browser-native AES-256-GCM with a random 16-byte salt, a random 12-byte IV, PBKDF2-HMAC-SHA-256 at 600,000 iterations, and an authentication tag. Its outer envelope contains no patient name, dose, or care history.
+- The passphrase is not saved in the care database, app cache, or a server. Keep it separately; a lost passphrase cannot be recovered. This protects the exported file only. The working IndexedDB record is not separately encrypted by CareLoop and the app still has no sign-in.
+- Restore accepts protected files (`careloop-protected-1`) and legacy plaintext bedside files. It validates the unlocked data, shows the backup and current-record summaries, and requires acknowledgement plus typing `RESTORE` before replacement.
+- Restore works from first-time setup as well as Device and data. A newer change in another tab blocks replacement, requiring a fresh review. Wrong passphrases, file corruption, invalid measurements, and unsupported formats cannot silently replace the record.
+- Deletion shows the current patient and record counts, offers an encrypted backup first, and requires acknowledgement plus `DELETE`. It clears the active profile, caregivers, care tasks, and activity, leaving only an empty version marker for conflict protection. Other tabs close stale recording forms. Downloaded files, external calendars, old server data, device backups, and recoverable disk blocks are outside this deletion.
+- Reminder notifications contain a generic message rather than patient or medication details. Calendar export remains an explicit separate action because calendar files include care details.
+- Browser regressions verify encrypted downloads and offline exports, reviewed recovery on fresh setup, cancellation, competing-tab changes, deletion, cache contents, and no care-data upload requests.
+
+The exported file format is versioned and rejects unexpected encryption settings before key derivation. File bounds are 5 MB for the unlocked payload and 7 MB for the protected JSON file. Only new encrypted backup downloads are offered by the app; it does not fall back to plaintext when encryption is unavailable.
+
+The implementation follows browser [Web Crypto key derivation](https://developer.mozilla.org/en-US/docs/Web/API/SubtleCrypto/deriveKey) and authenticated encryption patterns. These are implementation details, not a claim of an independent security audit or clinical validation. See [PRIVACY.md](PRIVACY.md) for the data-handling statement.
+
 ## Existing server data
 
 This stage **does not open, migrate, or delete** the previous `data/careloop.sqlite` database. If it exists, it is left untouched and remains ignored by Git. The new app starts a separate bedside record. Previous accounts and their data do not automatically appear in the browser.
 
-The older `careloop-1` server backup format is not accepted as a bedside backup. A deliberate migration/export path can be added in a later stage; do not delete original files if they contain data you want to keep.
+The older `careloop-1` server backup format is not accepted as a bedside backup. There is no automatic server-data migration. Keep original files if they contain data you want to preserve; do not confuse them with the compatible `careloop-bedside-1` plaintext exports from Stages 1–3.
 
 ## Stage boundaries and commits
 
 1. **Local storage and account removal** — completed in Stage 1. Suggested commit: `feat: move CareLoop to account-free local bedside storage`.
 2. **Bedside interaction** — completed in Stage 2. Suggested commit: `feat: simplify bedside recording and separate care management`.
 3. **Offline installation** — completed in Stage 3. Suggested commit: `feat: add offline installation and device storage status`.
-4. **Recovery and privacy verification** — additional backup protection, restore and deletion safeguards, final tablet/offline tests, and accurate privacy/demo copy. Not started.
+4. **Recovery and privacy verification** — completed in Stage 4. Suggested commit: `feat: protect backups and harden local recovery safeguards`. Automated checks pass; physical-tablet checks remain manual.
 
-Pause between stages for the user to commit. Stage 3 supports reopening after offline readiness without a running server; initial installation and downloading updates still need the app host. Stage 4 remains to be completed.
+Pause between stages for the user to commit. Stage 3 supports reopening after offline readiness without a running server; initial installation and downloading updates still need the app host. The four planned code stages are complete. Use the manual tablet checks below before relying on an installed device.
 
 ## Tests
 
@@ -114,6 +128,7 @@ npm install --no-save playwright
 npx playwright install chromium
 npm run test:browser
 npm run test:offline
+npm run test:recovery
 ```
 
 You can set `PLAYWRIGHT_MODULE` and `PLAYWRIGHT_CHROMIUM_EXECUTABLE` to use an existing installation. Browser checks use fresh, isolated browser profiles, fictional data, and the real IndexedDB adapter. They cover reload/reopen persistence, conflicting tabs, transaction rollback, failed-save UI, separate-profile isolation, caregiver entry, recording and skipping, management navigation, current-day/date-filter separation, phone/tablet layouts, and the absence of care-data requests. The dedicated offline regression uses a persistent temporary browser profile: it records with networking disabled, stops the actual test server, restarts the browser, reopens the saved record offline, and checks waiting updates without losing a draft. Storage-permission grant/denial UI branches are simulated; actual device installation and permission behavior still need manual tablet testing. Screenshots go to ignored `test-results/`.
@@ -124,10 +139,12 @@ You can set `PLAYWRIGHT_MODULE` and `PLAYWRIGHT_CHROMIUM_EXECUTABLE` to use an e
 src/domain.js              Parsing, scheduling, task generation, warnings, calendar text
 src/bedside.js             Current-day grouping and next-task selection
 src/care-record.js         Local record validation, mutation, attribution, backup format
+src/file-protection.js     Versioned AES-GCM backup protection and unlocking
 src/server.js              Static development server only
 src/static-app.js          Static asset list, versioned worker generation, build helper
 scripts/build.mjs          Build the deployable dist/ folder
 public/storage.js          IndexedDB transactions and same-device change notifications
+public/recovery.js         Reviewed backup, restore and deletion dialogs
 public/offline.js          Offline readiness, installation and storage-permission UI
 public/sw.js               Worker template; build/server supplies version and asset list
 public/manifest.webmanifest Home-screen installation metadata
@@ -143,6 +160,8 @@ tests/server.test.js       Static-server and endpoint-removal tests
 tests/browser.mjs          Real-browser workflow and local-storage checks
 tests/offline.test.js      Worker, manifest, asset allowlist and build tests
 tests/offline-browser.mjs  Persistent-profile offline and waiting-update checks
+tests/file-protection.test.js  Encryption and tamper/wrong-passphrase checks
+tests/recovery-browser.mjs Backup, restore, deletion and privacy browser checks
 ```
 
 ## Configuration
@@ -150,3 +169,16 @@ tests/offline-browser.mjs  Persistent-profile offline and waiting-update checks
 `HOST` (default `127.0.0.1`) and `PORT` (default `3000`) configure the static server. Optional `STATIC_DIR` serves a built folder instead of source assets. It does not read `.env` automatically. `DATA_DIR` and `SECURE_COOKIES` are no longer used.
 
 This remains a prototype with no clinical validation. Food windows and supported frequency conventions are scheduling assumptions to review against the original paperwork. English text entry is supported; photo import, translations, tapering regimens, as-needed dosing, and closed-app alarms are not implemented.
+
+## Manual tablet checks still to run
+
+Use fictional data for these checks. Browser automation does not prove that every tablet/OS installation behaves the same way.
+
+1. Install from the intended HTTPS address, open the home-screen app, and confirm the expected patient record and time zone.
+2. Enable airplane mode, close and reopen the app, record a task, then restart the tablet and verify the saved entry.
+3. Export an encrypted backup, verify it exists in Downloads, then restore it on a fresh browser/profile using its passphrase. Confirm that preview, cancellation, and replacement behave as expected.
+4. Confirm the browser’s actual storage-protection result. A denial must not be shown as protection granted.
+5. Check the bedside controls and recording dialog in portrait and landscape, and verify the device’s screen lock.
+6. Use the notification/closed-app limitations as documented; this implementation does not promise alarms while locked or closed.
+
+Clinical review of the supported timing assumptions and caregiver usability testing have not been performed. Optional OCR, translations, background alarms, and migration of older server records remain outside this implementation.

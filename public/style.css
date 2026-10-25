@@ -1178,3 +1178,75 @@ hr {
 .storage-protection {
   font-weight: 550;
 }
+
+#recovery-dialog {
+  max-width: 760px;
+  width: calc(100% - 30px);
+  padding: 28px;
+}
+#recovery-dialog h2 {
+  font-size: 25px;
+  line-height: 1.3;
+}
+#recovery-dialog p {
+  font-size: 14px;
+}
+#recovery-dialog label {
+  font-size: 14px;
+}
+#recovery-dialog input {
+  font-size: 16px;
+  min-height: 46px;
+}
+#recovery-dialog .check input {
+  min-height: 20px;
+  height: 20px;
+}
+#recovery-dialog .actions {
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+.recovery-summary {
+  margin: 16px 0 24px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 15px;
+}
+.recovery-summary > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 8px 0;
+  font-size: 13px;
+}
+.recovery-summary dt {
+  color: var(--muted);
+}
+.recovery-summary dd {
+  margin: 0;
+  text-align: right;
+  font-weight: 550;
+  overflow-wrap: anywhere;
+  max-width: 65%;
+}
+.restore-comparison {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+}
+.restore-comparison h3 {
+  font-size: 15px;
+}
+@media (max-width: 700px) {
+  .restore-comparison {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+  #recovery-dialog {
+    padding: 22px;
+  }
+  #recovery-dialog .actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}

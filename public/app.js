@@ -7,7 +7,7 @@ import {
   toICS,
 } from "/domain.js";
 import { loadRecord, saveChange, onRecordChange } from "/storage.js";
-import { makeBackup } from "/care-record.js";
+import { createRecovery } from "/recovery.js";
 import { bedsideDay } from "/bedside.js";
 import {
   getDeviceStatus,
@@ -42,6 +42,22 @@ let state = null,
   reminderTimer = null,
   renderedTab = null;
 const app = $("#app");
+const recovery = createRecovery({
+  getLatest: loadRecord,
+  save: commit,
+  download,
+  toast,
+  onComplete: async () => {
+    clearInterval(reminderTimer);
+    draft = null;
+    preview = null;
+    draftVersion = null;
+    tab = "today";
+    filter = "";
+    recordQuery = "";
+    await refresh();
+  },
+});
 const localDate = () =>
   new Date().toLocaleDateString("en-CA", {
     timeZone:
@@ -108,7 +124,7 @@ function setup() {
     )
     .join(
       "",
-    )}</div></details><label>Caregiver names (optional, one per line)<textarea name="names" rows="3" placeholder="Lan&#10;Minh"></textarea></label><p class="muted">Caregiver names are labels for this tablet, not verified identities. Anyone with access to this browser can use the record.</p><button type="submit" class="primary">Set up this device</button></form></section><p class="muted">Care information is saved in this browser on this device. Clearing site data or using a different browser will not preserve this record. Use Device and data under Manage care to check offline readiness and installation instructions.</p></main>`;
+    )}</div></details><label>Caregiver names (optional, one per line)<textarea name="names" rows="3" placeholder="Lan&#10;Minh"></textarea></label><p class="muted">Caregiver names are labels for this tablet, not verified identities. Anyone with access to this browser can use the record.</p><button type="submit" class="primary">Set up this device</button></form></section><p class="muted">Care information is saved in this browser on this device. Clearing site data or using a different browser will not preserve this record. Use Device and data under Manage care to check offline readiness and installation instructions.</p><section class="card"><h2>Already have a bedside backup?</h2><p>Restore a saved backup instead of setting up a new record. The file is opened on this device.</p><label class="file-label">Choose backup to restore<input type="file" id="backup-upload" accept=".json,application/json"></label></section></main>`;
 }
 function storageFailure(message) {
   app.innerHTML = `<main class="setup"><h1>Local storage needs attention.</h1><section class="alert" role="alert"><p>${esc(message)}</p><p>CareLoop has not started a temporary record. Your existing data has not been replaced.</p>${button("retry-storage", "Try opening storage again", "secondary")}</section></main>`;
@@ -489,7 +505,7 @@ function settingsView() {
       "Local care records, optional exports, and reminders.",
     ) +
     deviceStatusView() +
-    `<section class="card"><h2>Local storage</h2><p>The plan and care history are saved in this browser’s database on this device. They are not sent to the app server. There are no accounts or remote family access.</p><p class="muted">Anyone who can open this browser can read or change the record. Use the tablet’s screen lock. Clearing browser data can delete the record. Backups and calendar exports create separate copies.</p></section><section class="card"><h2>Reminders</h2><p>Page reminders require permission and an open, awake page. They cannot guarantee alarms when the tablet is locked or the browser is closed.</p>${button("reminders", "Enable reminders while this page is open", "secondary")}<h3>Optional calendar export</h3><p class="muted">The file contains care details and a 15-minute reminder. Importing it into a cloud calendar can send those details outside this device. This is a snapshot; later plan edits do not update imported events.</p>${button("calendar", "Download calendar (.ics)", "secondary")}</section><section class="card"><h2>Backup and restore</h2><p>A backup is a plain-text file containing the patient’s care record and activity history. Keep it private. Nothing is uploaded when you download or restore a backup here.</p><div class="actions">${button("backup", "Download backup", "secondary")}<label class="file-label">Restore bedside backup<input type="file" id="backup-upload" accept=".json,application/json"></label></div><p class="muted">Restoring replaces the bedside record in this browser. The older server version’s backups are a different format and cannot be restored here yet.</p><hr><h3>Delete this device’s care data</h3><p>Removes setup, caregivers, plan, records, and activity from this browser’s active record. Exported files and the old server database are separate copies.</p>${button("reset", "Delete care data", "danger-button")}</section><section class="card"><h2>Supported scope</h2><p>English text entry; fixed daily frequencies; food timing windows; named medication spacing rules; 30-day plans. Unsupported instructions require review. Translation and photo reading are not included.</p><p>Offline readiness is shown above. Additional backup protections are planned for the final stage. No clinical validation has been performed; use fictional data while testing.</p></section>`
+    `<section class="card"><h2>Local storage</h2><p>The plan and care history are saved in this browser’s database on this device. They are not sent to the app server. There are no accounts or remote family access.</p><p class="muted">Anyone who can open this browser can read or change the record. Use the tablet’s screen lock. Clearing browser data can delete the record. Backups and calendar exports create separate copies.</p></section><section class="card"><h2>Reminders</h2><p>Reminder notifications use a generic message without patient or medication names. Page reminders require permission and an open, awake page. They cannot guarantee alarms when the tablet is locked or the browser is closed.</p>${button("reminders", "Enable reminders while this page is open", "secondary")}<h3>Optional calendar export</h3><p class="muted">The file contains care details and a 15-minute reminder. Importing it into a cloud calendar can send those details outside this device. This is a snapshot; later plan edits do not update imported events.</p>${button("calendar", "Download calendar (.ics)", "secondary")}</section><section class="card"><h2>Backup and restore</h2><p>New backups are encrypted on this device with a passphrase you choose. CareLoop does not save the passphrase and cannot recover it. It is only for the file; the bedside app still has no sign-in.</p><div class="actions">${button("backup", "Save encrypted backup", "secondary")}<label class="file-label">Restore bedside backup<input type="file" id="backup-upload" accept=".json,application/json"></label></div><p class="muted">You can restore encrypted backups or older unencrypted bedside backups. Nothing is uploaded. Review the patient and record counts before replacing anything. Older server-version backups are still a different format.</p><hr><h3>Delete this device’s care data</h3><p>Review what will be removed, save a backup if needed, and confirm explicitly. Downloaded files, calendars, the old server database, and device backups are separate copies.</p>${button("reset", "Review data deletion", "danger-button")}</section><section class="card"><h2>Supported scope</h2><p>English text entry; fixed daily frequencies; food timing windows; named medication spacing rules; 30-day plans. Unsupported instructions require review. Translation and photo reading are not included.</p><p>Offline readiness is shown above. Exported backups are encrypted; the working browser record is not separately encrypted by CareLoop. Use the device’s screen lock. No clinical validation has been performed; use fictional data while testing.</p></section>`
   );
 }
 function updateRecordForm() {
@@ -639,19 +655,7 @@ async function action(action, b) {
         "text/calendar;charset=utf-8",
       );
     }
-    if (action === "backup") {
-      if (
-        !confirm(
-          "Download a plain-text backup containing this patient’s care data? Store it privately.",
-        )
-      )
-        return;
-      download(
-        "careloop-bedside-backup.json",
-        JSON.stringify(makeBackup(state), null, 2),
-        "application/json",
-      );
-    }
+    if (action === "backup") await recovery.openExport();
     if (action === "new-plan") {
       draft = newDraft();
       draftVersion = state.version;
@@ -748,7 +752,7 @@ async function action(action, b) {
           const delta = Date.parse(t.dueAt) - Date.now();
           if (delta >= 0 && delta <= 900000 && !notified.has(t.id)) {
             new Notification("CareLoop: upcoming task", {
-              body: `${t.time} · ${t.label}`,
+              body: "A care task is coming up. Open CareLoop to review the bedside record.",
             });
             notified.add(t.id);
           }
@@ -756,23 +760,7 @@ async function action(action, b) {
       }, 15000);
       toast("Page reminders enabled while this page stays open and awake.");
     }
-    if (action === "reset") {
-      if (
-        prompt(
-          "This deletes setup and all care records in this browser. Type DELETE to continue.",
-        ) !== "DELETE"
-      )
-        return;
-      await commit({ type: "reset", confirm: "DELETE" });
-      clearInterval(reminderTimer);
-      tab = "today";
-      filter = "";
-      recordQuery = "";
-      draft = null;
-      preview = null;
-      await refresh();
-      toast("This browser’s care record was deleted.");
-    }
+    if (action === "reset") await recovery.openDelete();
   } catch (e) {
     if (e.status === 409) await refresh();
     toast(e.message, true);
@@ -906,20 +894,8 @@ app.addEventListener("change", async (e) => {
     }
     if (e.target.getAttribute("id") === "backup-upload") {
       const file = e.target.files[0];
-      if (!file) return;
-      if (file.size > 5000000) throw new Error("Backup must be under 5 MB.");
-      const backup = JSON.parse(await file.text());
-      if (
-        !confirm(
-          "Replace all bedside setup and care records in this browser with this backup?",
-        )
-      )
-        return;
-      await commit({ type: "restore", backup });
-      draft = null;
-      preview = null;
-      await refresh();
-      toast("Backup restored.");
+      e.target.value = "";
+      if (file) await recovery.openImport(file);
     }
   } catch (err) {
     toast(err.message, true);
@@ -947,6 +923,7 @@ async function checkForLocalChanges() {
       draft = null;
       preview = null;
       $("#task-dialog")?.close();
+      recovery.cancel();
       state = fresh;
       tab = "today";
       filter = "";

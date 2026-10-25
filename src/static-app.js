@@ -4,6 +4,11 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 const root = fileURLToPath(new URL("../", import.meta.url));
 export const APP_FILES = Object.freeze({
+  "/file-protection.js": [
+    "src/file-protection.js",
+    "text/javascript; charset=utf-8",
+  ],
+  "/recovery.js": ["public/recovery.js", "text/javascript; charset=utf-8"],
   "/": ["public/index.html", "text/html; charset=utf-8"],
   "/app.js": ["public/app.js", "text/javascript; charset=utf-8"],
   "/offline.js": ["public/offline.js", "text/javascript; charset=utf-8"],
