@@ -11,6 +11,7 @@ import { parseInstructions } from "/instructions.js";
 import { generatePlanTasks, preparePlanTasks } from "/care-plan.js";
 import {
   RECORD_KEY,
+  isTaskExpired,
   emptyRecord,
   recordTask,
   updateCaregiver,
@@ -42,7 +43,8 @@ let lastSaved,
   busy = false,
   draftToken = null,
   draftLoaded = false,
-  draftDirty = false;
+  draftDirty = false,
+  draftStartAt = null;
 const validDate = (value) =>
   /^\d{4}-\d{2}-\d{2}$/.test(value || "") &&
   localISO(new Date(value + "T12:00:00")) === value;
@@ -168,6 +170,7 @@ function computeLoad(state) {
   );
   let un = 0;
   state.tasks.forEach((t) => {
+    if (t.status === "discarded") return;
     const k = by[t.who];
     if (!k) {
       un++;
@@ -349,6 +352,7 @@ window.addEventListener("storage", (event) => {
 });
 window.addEventListener("focus", synchronize);
 function clearDraft() {
+  draftStartAt = null;
   draftLoaded = false;
   draftDirty = false;
   draftToken = lastToken;
@@ -365,6 +369,7 @@ function openSavedPlan(scroll = true) {
   fillReview(
     {
       patient: S.patient,
+      planStartAt: S.planStartAt,
       meds: S.meds,
       followups: S.followups,
       flags: S.flags,
@@ -405,6 +410,7 @@ async function seed() {
     candidate = emptyRecord();
   Object.assign(candidate, {
     patient: parsed.patient,
+    planStartAt: Date.now(),
     meds: parsed.meds,
     followups: parsed.followups,
     flags: parsed.flags,
@@ -488,7 +494,7 @@ function renderHome() {
   }
   const today = localISO(new Date());
   const day = today;
-  const tt = S.tasks.filter((t) => t.date === day);
+  const tt = S.tasks.filter((t) => t.date === day && t.status !== "discarded");
   const done = tt.filter((t) => t.status === "done").length;
   const pct = tt.length ? Math.round((done / tt.length) * 100) : 0;
   const { next, overdue } = homeQueue(S);
@@ -507,7 +513,7 @@ function renderHome() {
   const logV = findLogViolations(S);
 
   $("#homeSub").textContent =
-    `${tt.length} doses and checks on ${day} · ${S.tasks.length} in the 30-day plan`;
+    `${tt.length} doses and checks on ${day} · ${S.tasks.filter((task) => task.status !== "discarded").length} in the 30-day plan`;
   $("#homeStats").innerHTML = `
     <div class="stat"><div class="k">Today</div><div class="v">${done}<small>/${tt.length} done</small></div></div>
     <div class="stat"><div class="k">Adherence</div><div class="v">${pct}<small>%</small></div></div>
@@ -589,16 +595,23 @@ function renderSchedule() {
     host.innerHTML = '<span class="small">Compile a plan first.</span>';
     return;
   }
-  const dates = [...new Set(S.tasks.map((task) => task.date))].sort();
+  const dates = [
+    ...new Set(
+      S.tasks
+        .filter((task) => task.status !== "discarded")
+        .map((task) => task.date),
+    ),
+  ].sort();
   const selected = host.querySelector("#scheduleDate")?.value;
   const date = dates.includes(selected)
     ? selected
     : dates.includes(localISO(new Date()))
       ? localISO(new Date())
-      : dates[0];
+      : dates[0] || localISO(new Date());
   const violations = findLogViolations(S);
   const tasks = S.tasks.filter(
-    (task) => task.kind === "med" && task.date === date,
+    (task) =>
+      task.kind === "med" && task.date === date && task.status !== "discarded",
   );
   const pins = tasks
     .map((task) => {
@@ -704,17 +717,20 @@ function openResolution(reasons = []) {
 function renderTasks() {
   const host = $("#taskList"),
     sub = $("#taskSub");
-  if (!S.tasks.length) {
-    sub.textContent = "Compile a plan first.";
+  const activeTasks = S.tasks.filter((task) => task.status !== "discarded");
+  if (!activeTasks.length) {
+    sub.textContent = S.patient
+      ? "No active items in this plan."
+      : "Compile a plan first.";
     host.innerHTML = "";
     $("#conflictBox").innerHTML = "";
     $("#dayFilter").innerHTML = "";
     return;
   }
-  const dates = [...new Set(S.tasks.map((t) => t.date))].sort();
+  const dates = [...new Set(activeTasks.map((t) => t.date))].sort();
   const sel = $("#dayFilter");
   const cur = sel.value && dates.includes(sel.value) ? sel.value : dates[0];
-  sub.textContent = `${S.tasks.length} doses and checks over ${dates.length} days`;
+  sub.textContent = `${activeTasks.length} doses and checks over ${dates.length} days`;
 
   const v = findLogViolations(S);
   $("#conflictBox").innerHTML = v.length
@@ -737,7 +753,7 @@ function renderTasks() {
           `<option value="${d}" ${list.includes(d) ? "selected" : ""}>${d}</option>`,
       )
       .join("");
-    const rows = S.tasks.filter((t) => list.includes(t.date));
+    const rows = activeTasks.filter((t) => list.includes(t.date));
     host.innerHTML = `<div class="table-scroll"><table><thead><tr><th style="width:56px">Time</th><th>Task</th>
       <th style="width:138px">Assigned</th><th style="width:88px">Status</th><th style="width:138px">Action</th></tr></thead>
       <tbody>${rows
@@ -893,6 +909,7 @@ const MEAL_OPTS = [
 ];
 
 function fillReview(d, scroll = true) {
+  draftStartAt = Object.hasOwn(d, "planStartAt") ? d.planStartAt : Date.now();
   draftToken = lastToken;
   draftLoaded = true;
   draftDirty = false;
@@ -1043,6 +1060,7 @@ $("#btnGenerate").onclick = async () => {
   }
   const candidate = {
     ...S,
+    planStartAt: draftStartAt,
     patient: {
       name,
       age: $("#fAge").value,
@@ -1180,7 +1198,10 @@ $("#caregiverList").onclick = async (event) => {
 function openTask(id, intent = null) {
   if (busy) return;
   const task = structuredClone(S.tasks.find((t) => t.id === id));
-  if (!task) return;
+  if (!task || task.status === "discarded" || isTaskExpired(task)) {
+    void refreshClock();
+    return;
+  }
   const token = lastToken,
     initialStatus = task.status,
     originalTime = task.doneAt || Date.now(),
@@ -1282,6 +1303,7 @@ function openTask(id, intent = null) {
 }
 
 load();
+await expireOldTasks();
 if (S.patient && S.tasks.length) {
   renderAll();
 } else {
@@ -1334,8 +1356,24 @@ function scrollTables() {
 scrollTables();
 
 let lastDisplayedDate = localISO(new Date());
-function refreshClock() {
+async function expireOldTasks() {
+  if (busy || !S.tasks.some((task) => isTaskExpired(task))) return;
+  busy = true;
+  try {
+    const previousToken = lastToken;
+    const snapshot = await recordStore.discardExpired();
+    acceptSnapshot(snapshot);
+    if (draftToken === previousToken) draftToken = lastToken;
+    renderAll();
+  } catch (error) {
+    notify(error.message, true);
+  } finally {
+    busy = false;
+  }
+}
+async function refreshClock() {
   synchronize();
+  await expireOldTasks();
   if (!S.patient) return;
   const date = localISO(new Date());
   renderHome();

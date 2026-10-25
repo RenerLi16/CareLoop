@@ -23,6 +23,7 @@ export function emptyRecord() {
   return {
     schema: 2,
     revision: 0,
+    planStartAt: null,
     patient: null,
     meds: [],
     followups: [],
@@ -61,6 +62,10 @@ export function normalizeRecord(input) {
   for (const key of Object.keys(value))
     if (Object.hasOwn(input, key)) value[key] = structuredClone(input[key]);
   requireValue(Number.isSafeInteger(value.revision) && value.revision >= 0);
+  requireValue(
+    value.planStartAt == null ||
+      (Number.isFinite(value.planStartAt) && value.planStartAt >= 0),
+  );
   for (const key of [
     "meds",
     "followups",
@@ -148,7 +153,7 @@ export function normalizeRecord(input) {
         validDay(task.date) &&
         validClock(task.time) &&
         short(task.label, 500) &&
-        ["todo", "done", "skip"].includes(task.status) &&
+        ["todo", "done", "skip", "discarded"].includes(task.status) &&
         ["med", "weight", "symptom", "visit"].includes(task.kind),
     );
     if (currentTasks.has(task)) {
@@ -161,6 +166,10 @@ export function normalizeRecord(input) {
     if (task.dueAt == null)
       task.dueAt = new Date(task.date + "T" + task.time + ":00").getTime();
     requireValue(Number.isFinite(task.dueAt));
+    requireValue(
+      task.discardedAt == null ||
+        (Number.isFinite(task.discardedAt) && task.discardedAt >= 0),
+    );
     requireValue(task.recordedBy == null || short(task.recordedBy));
     requireValue(task.recordedByName == null || short(task.recordedByName));
     requireValue(task.note == null || short(task.note, 2000));
@@ -254,10 +263,42 @@ const taskSnapshot = (task) => ({
   recordedByName: task.recordedByName || "",
   note: task.note || "",
 });
+export const isTaskExpired = (task, now = Date.now()) =>
+  task.status === "todo" &&
+  now - (task.dueAt ?? new Date(`${task.date}T${task.time}:00`).getTime()) >
+    24 * 3600000;
+
+// Keep a tombstone so rebuilding a plan cannot recreate a discarded item.
+export function discardExpiredTasks(record, now = Date.now()) {
+  const expired = record.tasks.filter((task) => isTaskExpired(task, now));
+  if (!expired.length) return record;
+  const next = structuredClone(record);
+  const ids = new Set(expired.map((task) => task.id));
+  for (const task of next.tasks)
+    if (ids.has(task.id)) {
+      task.status = "discarded";
+      task.discardedAt = now;
+    }
+  next.audit = [
+    ...(next.audit || []),
+    {
+      at: now,
+      action: "discard_expired",
+      by: "Automatic expiry",
+      taskIds: [...ids],
+    },
+  ].slice(-10000);
+  return next;
+}
+
 export function recordTask(record, patch, now = Date.now()) {
   const next = structuredClone(record),
     task = next.tasks.find((t) => t.id === patch.id);
   requireValue(task, "This task no longer exists. Reload the saved plan.");
+  requireValue(
+    task.status !== "discarded" && !isTaskExpired(task, now),
+    "This unfinished item expired more than 24 hours after its scheduled time.",
+  );
   requireValue(
     ["todo", "done", "skip"].includes(patch.status),
     "Choose completed, skipped, or pending.",

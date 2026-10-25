@@ -8,7 +8,11 @@ const numericTime = (t) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3));
 const dayDistance = (a, b) => Math.min(Math.abs(a - b), 1440 - Math.abs(a - b));
 export function generatePlanTasks(state, days = 30) {
   if (!state.patient || !state.schedule?.ok) return [];
-  const start = new Date(state.patient.dischargeDate + "T00:00:00");
+  const startDay =
+    state.planStartAt == null
+      ? state.patient.dischargeDate
+      : dateKey(new Date(state.planStartAt));
+  const start = new Date(startDay + "T00:00:00");
   const end = new Date(start);
   end.setDate(end.getDate() + days);
   const team = state.team.length
@@ -92,11 +96,12 @@ export function generatePlanTasks(state, days = 30) {
     const date = new Date(start);
     date.setDate(date.getDate() + Number(followup.days ?? 7));
     const key = dateKey(date);
+    const dueAt = Math.max(at(key, "09:00"), state.planStartAt ?? 0);
     tasks.push({
       id: "fu-" + followup.id,
       date: key,
-      time: "09:00",
-      dueAt: at(key, "09:00"),
+      time: clockKey(new Date(dueAt)),
+      dueAt,
       kind: "visit",
       label: `Book ${followup.who} follow-up`,
       who: team[0].id,
@@ -104,7 +109,11 @@ export function generatePlanTasks(state, days = 30) {
       doneAt: null,
     });
   }
-  return tasks.sort((a, b) => a.dueAt - b.dueAt || a.id.localeCompare(b.id));
+  return tasks
+    .filter(
+      (task) => state.planStartAt == null || task.dueAt >= state.planStartAt,
+    )
+    .sort((a, b) => a.dueAt - b.dueAt || a.id.localeCompare(b.id));
 }
 export function validateDatedTasks(plan, tasks, { pendingOnly = false } = {}) {
   const errors = [],
@@ -195,7 +204,7 @@ const timingSignature = (plan) =>
       .sort((a, b) => a.id.localeCompare(b.id)),
     meals: plan.meals,
     times: plan.schedule?.times,
-    start: plan.patient?.dischargeDate,
+    start: plan.planStartAt ?? plan.patient?.dischargeDate,
   });
 export function preparePlanTasks(
   previous,

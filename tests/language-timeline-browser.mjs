@@ -117,15 +117,24 @@ try {
   );
   await page.locator('nav [data-t="schedule"]').click();
   const labels = await checkLabels(page);
+  const scheduledCount = await page.evaluate(() => {
+    const state = JSON.parse(
+      localStorage.getItem("careloop_instructor_resolver_v1"),
+    );
+    const date = document.querySelector("#scheduleDate").value;
+    return state.tasks.filter(
+      (task) =>
+        task.kind === "med" &&
+        task.date === date &&
+        task.status !== "discarded",
+    ).length;
+  });
   assert.equal(
     labels.length,
-    5,
-    "Each medicine at each time has its own name label",
+    scheduledCount,
+    "Only doses from the loaded plan appear",
   );
-  assert.equal(
-    labels.filter((l) => l.name === "Metoprolol succinate").length,
-    2,
-  );
+  assert.ok(labels.length > 0);
   mkdirSync("test-results", { recursive: true });
   await page.locator("#languageSelect").selectOption("en");
   await page.waitForFunction(() => document.documentElement.lang === "en");
@@ -182,6 +191,10 @@ try {
   }
   await page.locator("#btnGenerate").click();
   await page.locator("#p-schedule.on").waitFor();
+  const days = await page
+    .locator("#scheduleDate option")
+    .evaluateAll((options) => options.map((option) => option.value));
+  await page.locator("#scheduleDate").selectOption(days[1]);
   assert.equal((await checkLabels(page)).length, 6);
   assert.equal(await page.locator(".medicine-timeline img").count(), 0);
   assert.equal(await page.evaluate(() => window.injected), undefined);

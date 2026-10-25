@@ -95,7 +95,8 @@ try {
     );
   let saved = await state();
   assert.ok(saved?.schedule.ok, await page.locator("#genStatus").innerText());
-  assert.equal(saved.tasks.filter((t) => t.kind === "med").length, 150);
+  assert.ok(saved.tasks.filter((t) => t.kind === "med").length > 140);
+  assert.ok(saved.tasks.every((t) => t.dueAt >= saved.planStartAt));
   assert.match(
     await page.locator("#scheduleBody").innerText(),
     /medicines.*doses/s,
@@ -118,7 +119,7 @@ try {
   const dates = await page
     .locator("#dayFilter option")
     .evaluateAll((options) => options.map((o) => o.value));
-  await page.locator("#dayFilter").selectOption(dates[2]);
+  await page.locator("#dayFilter").selectOption(dates[0]);
   assert.ok(await page.locator("#taskList [data-done]").count());
   const doneId = await page
     .locator("#taskList [data-done]")

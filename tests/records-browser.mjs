@@ -83,7 +83,7 @@ try {
     page = await context.newPage(),
     errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
-  await page.clock.install({ time: new Date("2026-10-25T19:00:00Z") });
+  await page.clock.install({ time: new Date("2026-10-25T14:00:00Z") });
   await page.goto(url);
   await clickTab(page, "import");
   await page
@@ -96,6 +96,7 @@ try {
   await page.locator("#fSymptoms").uncheck();
   await page.locator("#btnGenerate").click();
   await page.locator("#p-schedule.on").waitFor();
+  await page.clock.fastForward(5 * 3600000);
   await addPerson(page, "Lan");
   await addPerson(page, "Minh");
   let state = await snapshot(page);

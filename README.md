@@ -56,6 +56,10 @@ The upper-right selector switches the interface between English, Vietnamese, Spa
 
 Daily Schedule uses a colored box for each dose and a separate row for each medicine. Completed doses appear at their actual recorded time, alongside their original target. A live current-time line moves across today’s chart. Choose a date to see the saved plan for that day; swipe the timeline horizontally on phones.
 
+New discharge plans start at the instant they are read into the app. The original discharge date remains patient information; medicine and daily-check slots earlier than the load time are omitted. Reopening or rebuilding the saved plan retains its original load time.
+
+Unfinished items more than 24 elapsed hours past their scheduled time are automatically discarded on opening the app, while it is open, and on saving. They disappear from active views and remain as internal discarded entries so rebuilding cannot recreate them. Completed and explicitly skipped records are preserved.
+
 Today lists every past-due pending item in a yellow card with its own Mark done button. Next up shows the earliest pending item at or after the current time, including the following day when needed. Upcoming is blue; the five-minute target window is green when the entered timing restrictions also fit.
 
 ## Scheduling
@@ -68,7 +72,7 @@ Compile schedule and Auto-resolve schedule search for times satisfying the suppo
 - Supported assumptions: with food means within 30 minutes; before/after food means 15–60 minutes; morning is 08:00 and bedtime is 22:00. Ordinary twice/three-times-daily plans use daytime slots at least four hours apart. Review these assumptions against the written instructions.
 - Food and spacing rules are rechecked across the dated plan. Clock-change conflicts block saving. Search uses 15-minute slots and a bounded search; failure does not establish that a prescription is impossible.
 - Recording outside the target window or an entered timing restriction saves the actual event, then opens a conflict review. The preview offers revised times for pending doses, with an explicit Apply or Keep current schedule choice.
-- Runtime resolution anchors completed doses at their actual times. It preserves each pending dose, day, caregiver assignment, food and spacing restrictions, and exact elapsed intervals. Past-day overdue tasks stay open for review; it does not invent replacement doses or relax instructions to make a plan fit.
+- Runtime resolution anchors completed doses at their actual times. It preserves each pending dose, day, caregiver assignment, food and spacing restrictions, and exact elapsed intervals. Past-day overdue tasks remain open until their 24-hour expiry; it does not invent replacement doses or relax instructions to make a plan fit.
 - Runtime search uses five-minute candidate times plus exact interval and spacing boundaries. A bounded search that finds no solution leaves the saved timetable unchanged.
 - Editing the prescription after a medicine is already recorded today still requires review. Unchanged rebuilds preserve runtime adjustments and completion records.
 
