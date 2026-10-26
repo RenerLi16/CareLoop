@@ -19,6 +19,11 @@ export const ASSETS = {
   "/setup.js": ["public/setup.js", "text/javascript; charset=utf-8"],
   "/app.js": ["public/app.js", "text/javascript; charset=utf-8"],
   "/scheduler.js": ["src/scheduler.js", "text/javascript; charset=utf-8"],
+  "/meals.js": ["src/meals.js", "text/javascript; charset=utf-8"],
+  "/meal-settings.js": [
+    "src/meal-settings.js",
+    "text/javascript; charset=utf-8",
+  ],
   "/instructions.js": ["src/instructions.js", "text/javascript; charset=utf-8"],
   "/live-schedule.js": [
     "src/live-schedule.js",

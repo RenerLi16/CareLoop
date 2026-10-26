@@ -23,12 +23,12 @@ export function layoutMedicineTimeline(chart) {
       if (sublane < 0) sublane = ends.length;
       ends[sublane] = left + box.offsetWidth;
       box.style.left = `${left}px`;
-      box.style.top = `${58 + (rows + sublane) * laneStep}px`;
+      box.style.top = `${88 + (rows + sublane) * laneStep}px`;
       box.style.setProperty("--anchor-offset", `${anchor - left}px`);
     }
     rows += ends.length;
   }
-  chart.style.height = `${82 + Math.max(1, rows) * laneStep}px`;
+  chart.style.height = `${112 + Math.max(1, rows) * laneStep}px`;
 }
 const medicineTimelineObserver = new ResizeObserver((entries) => {
   for (const { target } of entries) {

@@ -1,4 +1,6 @@
 import { createSetupWizard } from "/setup.js";
+import { MEAL_KEYS, mealWindow } from "/meals.js";
+import { previewMealSettings } from "/meal-settings.js";
 import {
   homeQueue,
   taskDue,
@@ -425,6 +427,8 @@ async function seed() {
       { id: "t3", name: "Amy", rel: "granddaughter" },
     ],
     rawText: SAMPLE_TEXT,
+    meals: structuredClone(S.meals),
+    mealsConfigured: S.mealsConfigured,
   });
   candidate.schedule = autoResolve(candidate.meds, candidate.meals);
   candidate.tasks = generateTasks(candidate, 30);
@@ -453,6 +457,7 @@ function renderAll() {
 
 function renderHome() {
   clearTimeout(queueClockTimer);
+  renderMealSettings();
   const warnings = $("#patientWarnings");
   warnings.hidden = !S.patient || !S.flags.length;
   warnings.innerHTML = S.flags.length
@@ -585,6 +590,117 @@ function renderHome() {
   } else $("#nextCard").style.display = "none";
 }
 
+const mealName = (key) => key[0].toUpperCase() + key.slice(1);
+function mealSummary(meals) {
+  return MEAL_KEYS.map((key) => {
+    const period = mealWindow(meals[key]);
+    return `<span class="meal-summary-item"><b>${mealName(key)}</b> <span data-no-translate>${esc(period.start)}–${esc(period.end)}</span></span>`;
+  }).join("");
+}
+function renderMealSettings() {
+  const home = $("#mealSetupCard");
+  home.hidden = S.mealsConfigured;
+  home.innerHTML = S.mealsConfigured
+    ? ""
+    : `<div class="card meal-settings-card"><div class="small meal-eyebrow">Make it your day</div><h3>Set your meal periods</h3><p>Choose the usual start and end times for breakfast, lunch and dinner.</p><div class="meal-summary">${mealSummary(S.meals)}</div><button class="act" id="btnSetupMeals">Set meal periods</button><p class="small">After saving, you can edit these in About.</p></div>`;
+  if (!S.mealsConfigured) $("#btnSetupMeals").onclick = openMealSettings;
+  $("#aboutMealSummary").innerHTML = mealSummary(S.meals);
+  $("#reviewMealSummary").innerHTML = mealSummary(S.meals);
+}
+function openMealSettings() {
+  if (busy || document.querySelector("#meal-dialog")) return;
+  const token = lastToken;
+  const dialog = document.createElement("dialog");
+  dialog.id = "meal-dialog";
+  dialog.setAttribute("aria-labelledby", "meal-title");
+  dialog.innerHTML = `<form id="meal-form"><h2 id="meal-title">Meal periods</h2><p>Choose the usual start and end times for breakfast, lunch and dinner.</p><fieldset class="meal-period-fields">${MEAL_KEYS.map(
+    (key) => {
+      const period = mealWindow(S.meals[key]);
+      return `<div class="meal-period-row"><h3>${mealName(key)}</h3><label>Start<input type="time" name="${key}-start" value="${esc(period.start)}" required></label><label>End<input type="time" name="${key}-end" value="${esc(period.end)}" required></label></div>`;
+    },
+  ).join(
+    "",
+  )}</fieldset><p class="small">With food means during a meal period. Before food means 15–60 minutes before its start; after food means 15–60 minutes after its end.</p><p class="small">Review any changes to pending doses before saving. Completed records keep their actual times.</p><div id="meal-preview" aria-live="polite"></div><p id="meal-error" role="alert" tabindex="-1"></p><div class="dialog-actions"><button class="act" type="submit" data-review-meals>Review meal periods</button><button class="act" type="submit" data-save-meals hidden>Save meal periods</button><button class="ghost" type="button" data-change-meals hidden>Edit times</button><button class="ghost" type="button" data-cancel-meals>Cancel</button></div></form>`;
+  document.body.append(dialog);
+  const form = dialog.querySelector("form"),
+    fields = form.querySelector("fieldset"),
+    error = $("#meal-error");
+  let preview = null;
+  dialog.querySelector("[data-cancel-meals]").onclick = () => dialog.close();
+  dialog.addEventListener("close", () => dialog.remove());
+  const edit = dialog.querySelector("[data-change-meals]");
+  edit.onclick = () => {
+    preview = null;
+    fields.disabled = false;
+    $("#meal-preview").innerHTML = "";
+    dialog.querySelector("[data-review-meals]").hidden = false;
+    dialog.querySelector("[data-save-meals]").hidden = true;
+    edit.hidden = true;
+  };
+  form.onsubmit = async (event) => {
+    event.preventDefault();
+    if (busy) return;
+    error.textContent = "";
+    if (token !== lastToken) {
+      error.textContent =
+        "Another tab changed the plan. Close and reopen this preview.";
+      error.focus();
+      return;
+    }
+    if (!preview) {
+      const meals = Object.fromEntries(
+        MEAL_KEYS.map((key) => [
+          key,
+          {
+            start: form.elements[`${key}-start`].value,
+            end: form.elements[`${key}-end`].value,
+          },
+        ]),
+      );
+      const result = previewMealSettings(S, meals);
+      if (!result.ok) {
+        error.textContent = result.message;
+        error.focus();
+        return;
+      }
+      preview = result;
+      fields.disabled = true;
+      $("#meal-preview").innerHTML =
+        `<h3>Save these meal periods?</h3><div class="meal-summary">${mealSummary(meals)}</div>${preview.adjustments.length ? `<p>Apply these changes to pending doses?</p><div class="resolution-changes">${preview.adjustments.map((change) => `<p data-no-translate><b>${esc(change.label)}</b><br>${esc(change.date)} · ${esc(change.before)} → ${esc(change.after)}</p>`).join("")}</div>` : "<p>No pending doses need to move.</p>"}`;
+      dialog.querySelector("[data-review-meals]").hidden = true;
+      dialog.querySelector("[data-save-meals]").hidden = false;
+      edit.hidden = false;
+      dialog.querySelector("[data-save-meals]").focus();
+      return;
+    }
+    if (
+      preview.adjustments.some(
+        (change) =>
+          taskDue(preview.state.tasks.find((task) => task.id === change.id)) <
+          Date.now(),
+      )
+    ) {
+      error.textContent =
+        "Time has moved on. Close and reopen this preview for updated times.";
+      error.focus();
+      return;
+    }
+    const previousToken = lastToken;
+    if (await save(preview.state, token)) {
+      if (draftToken === previousToken) draftToken = lastToken;
+      dialog.close();
+      renderAll();
+      notify("Meal periods saved. You can edit them in About.");
+    } else error.textContent = $("#saveStatus").textContent;
+  };
+  dialog.showModal();
+}
+$("#btnEditMeals").onclick = openMealSettings;
+$("#btnReviewMeals").onclick = () => {
+  document.querySelector('nav [data-t="about"]').click();
+  openMealSettings();
+};
+
 const medicineColors = [
   "#168dcc",
   "#2c79af",
@@ -604,10 +720,6 @@ const medicineColors = [
 ];
 function renderSchedule() {
   const host = $("#scheduleBody");
-  if (!S.meds.length || !S.schedule) {
-    host.innerHTML = '<span class="small">Compile a plan first.</span>';
-    return;
-  }
   const dates = [
     ...new Set(
       S.tasks
@@ -660,6 +772,12 @@ function renderSchedule() {
   ])
     if (tasks.some((task) => task.kind === group.kind)) groups.push(group);
   const doseCount = tasks.filter((task) => task.kind === "med").length;
+  const mealSegments = MEAL_KEYS.map((key) => {
+    const period = mealWindow(S.meals[key]),
+      start = toMin(period.start),
+      end = toMin(period.end);
+    return `<div class="meal-segment" data-meal="${key}" data-start="${esc(period.start)}" data-end="${esc(period.end)}" style="left:${(start / 1440) * 100}%;width:${((end - start) / 1440) * 100}%" role="img" aria-label="${mealName(key)} ${esc(period.start)}–${esc(period.end)}"><span>${mealName(key)}</span></div>`;
+  }).join("");
   const pins = tasks
     .map((task) => {
       const lane = groups.findIndex(
@@ -695,8 +813,9 @@ function renderSchedule() {
     })
     .join("");
   host.innerHTML = `<div class="schedule-toolbar"><label>Day <select id="scheduleDate">${(dates.length ? dates : [date]).map((day) => `<option ${day === date ? "selected" : ""}>${esc(day)}</option>`).join("")}</select></label><span class="small">${dayMeds.length} medicines · ${doseCount} doses${tasks.length > doseCount ? ` · ${tasks.length - doseCount} care event${tasks.length - doseCount === 1 ? "" : "s"}` : ""}</span></div>
+    <div class="meal-summary schedule-meals">${mealSummary(S.meals)}</div>
     <div class="medicine-legend">${groups.map((group) => `<span ${group.kind === "med" ? "data-no-translate" : ""}><i style="background:${group.color}"></i>${esc(group.label)}</span>`).join("")}</div>
-    <div class="timeline-scroll"><div class="medicine-timeline" data-date="${esc(date)}" style="--lanes:${Math.max(1, groups.length)}" role="group" aria-label="Daily care timeline">${Array.from({ length: 13 }, (_, i) => `<div class="medicine-hour" style="left:${(i / 12) * 100}%"><span>${String(i * 2).padStart(2, "0")}:00</span></div>`).join("")}${pins}<div class="current-time-line" hidden><span></span></div></div></div>
+    <div class="timeline-scroll"><div class="medicine-timeline" data-date="${esc(date)}" style="--lanes:${Math.max(1, groups.length)}" role="group" aria-label="Daily care timeline">${mealSegments}${Array.from({ length: 13 }, (_, i) => `<div class="medicine-hour" style="left:${(i / 12) * 100}%"><span>${String(i * 2).padStart(2, "0")}:00</span></div>`).join("")}${pins}<div class="current-time-line" hidden><span></span></div></div></div>
     <p class="small chart-caption">Completed items appear at their recorded time. Click a box to record or edit.</p>
     <div class="schedule-actions"><button class="act" id="btnRecompile">Auto-resolve schedule</button><span class="small" id="recompMsg" role="status"></span></div>`;
   observeMedicineTimeline(host.querySelector(".medicine-timeline"));
@@ -982,8 +1101,6 @@ function fillReview(d, scroll = true) {
   $("#fAge").value = d.patient?.age || "";
   $("#fDate").value = d.patient?.dischargeDate || localISO(new Date());
   $("#fLang").value = d.patient?.lang || "en";
-  for (const key of Object.keys(DEFAULT_MEALS))
-    $("#meal-" + key).value = (S.meals || DEFAULT_MEALS)[key];
   const tb = $("#medTable tbody");
   tb.innerHTML = "";
   (d.meds || []).forEach((m) => addMedRow(m));
@@ -1101,9 +1218,7 @@ $("#btnGenerate").onclick = async () => {
       };
     })
     .filter(Boolean);
-  const meals = Object.fromEntries(
-    Object.keys(DEFAULT_MEALS).map((key) => [key, $("#meal-" + key).value]),
-  );
+  const meals = structuredClone(S.meals);
   if (errors.length) {
     $("#genStatus").textContent = errors.join(" ");
     return;

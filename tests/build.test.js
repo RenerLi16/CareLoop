@@ -22,6 +22,8 @@ test("release build removes old files, includes the full website, and versions o
       "scripts/build.mjs",
       "src/assets.js",
       "src/scheduler.js",
+      "src/meals.js",
+      "src/meal-settings.js",
       "src/care-plan.js",
       "src/live-schedule.js",
       "src/instructions.js",

@@ -1,5 +1,6 @@
 import { DEFAULT_MEALS, checkTimes, FREQUENCIES } from "./scheduler.js";
 import { validateDatedTasks } from "./care-plan.js";
+import { validMeals } from "./meals.js";
 export const RECORD_KEY = "careloop_instructor_resolver_v1";
 export const BACKUP_FORMAT = "careloop-compact-backup-1";
 export const dayOf = (d) =>
@@ -35,6 +36,7 @@ export function emptyRecord() {
     team: [],
     schedule: null,
     meals: { ...DEFAULT_MEALS },
+    mealsConfigured: false,
     history: [],
     audit: [],
     rawText: "",
@@ -152,10 +154,8 @@ export function normalizeRecord(input) {
         short(med.gapTarget || "", 200),
     );
   }
-  requireValue(
-    value.meals &&
-      Object.keys(DEFAULT_MEALS).every((key) => validClock(value.meals[key])),
-  );
+  requireValue(validMeals(value.meals));
+  requireValue(typeof value.mealsConfigured === "boolean");
   const taskIds = new Set(),
     currentTasks = new Set(value.tasks);
   for (const task of [...value.tasks, ...value.history]) {

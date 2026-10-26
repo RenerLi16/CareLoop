@@ -82,8 +82,9 @@ Compile schedule and Auto-resolve schedule search for times satisfying the suppo
 
 - Named spacing applies to the specified medicine. A spacing value without a target explicitly applies to all other medicines.
 - Exact 6-, 8-, and 12-hour instructions use elapsed time through midnight and daylight-saving changes. The 30-day plan shows the actual local times on each date.
-- Breakfast, lunch, and dinner default to 08:00, 12:00, and 18:00 and can be reviewed under Meal times.
-- Supported assumptions: with food means within 30 minutes; before/after food means 15–60 minutes; morning is 08:00 and bedtime is 22:00. Ordinary twice/three-times-daily plans use daytime slots at least four hours apart. Review these assumptions against the written instructions.
+- Breakfast, lunch, and dinner default to 07:30–08:30, 11:30–12:30, and 17:30–18:30. A **Set your meal periods** card appears on Today until the periods are reviewed and saved. Edit them later in **About → Meal periods**. The periods appear as shaded segments on Daily Schedule, including before a care plan is loaded.
+- Meal edits preview any changes to pending doses before saving. Completed records keep their actual times. Cancelling or an incompatible timetable leaves the saved settings unchanged. The periods and setup status stay in the local record, encrypted backups, and offline copies.
+- Supported assumptions: with food means during the selected meal period; before food means 15–60 minutes before its start; after food means 15–60 minutes after its end. Older records retain their original point-time rules until meal setup is saved. Morning is 08:00 and bedtime is 22:00. Ordinary twice/three-times-daily plans use daytime slots at least four hours apart. Review these assumptions against the written instructions.
 - Food and spacing rules are rechecked across the dated plan. Clock-change conflicts block saving. Search uses 15-minute slots and a bounded search; failure does not establish that a prescription is impossible.
 - Recording outside the target window or an entered timing restriction saves the actual event, then opens a conflict review. The preview offers revised times for pending doses, with an explicit Apply or Keep current schedule choice.
 - Runtime resolution anchors completed doses at their actual times. It preserves each pending dose, day, caregiver assignment, food and spacing restrictions, and exact elapsed intervals. Past-day overdue tasks remain open until their 24-hour expiry; it does not invent replacement doses or relax instructions to make a plan fit.
@@ -117,6 +118,7 @@ npm run test:upgrade
 npm run test:mobile
 npm run test:live
 npm run test:language
+npm run test:meals
 npm run format:check
 ```
 

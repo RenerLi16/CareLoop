@@ -22,7 +22,8 @@
     "test:lifecycle": "node tests/task-lifecycle-browser.mjs",
     "test:live": "node tests/live-schedule-browser.mjs",
     "test:mobile": "node tests/mobile-browser.mjs",
-    "test:language": "node tests/language-timeline-browser.mjs"
+    "test:language": "node tests/language-timeline-browser.mjs",
+    "test:meals": "node tests/meals-browser.mjs"
   },
   "devDependencies": {
     "prettier": "^3.6.2"

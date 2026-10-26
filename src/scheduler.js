@@ -1,4 +1,5 @@
 // Deterministic scheduling of entered instructions. No dose or prescription edits.
+import { fitsMealTime, validMeals } from "./meals.js";
 export const DEFAULT_MEALS = Object.freeze({
   breakfast: "08:00",
   lunch: "12:00",
@@ -35,21 +36,7 @@ export function preferredTimes(med) {
   return ["08:00"];
 }
 function buildOptions(med, meals) {
-  const mealPoints = Object.entries(meals)
-    .filter(
-      ([name]) =>
-        !med.mealTarget || med.mealTarget === "any" || med.mealTarget === name,
-    )
-    .map(([, t]) => minuteOf(t));
-  const mealFits = (t) =>
-    med.meal === "any" ||
-    mealPoints.some((m) =>
-      med.meal === "with"
-        ? circularDistance(t, m) <= 30
-        : med.meal === "before"
-          ? (m - t + 1440) % 1440 >= 15 && (m - t + 1440) % 1440 <= 60
-          : (t - m + 1440) % 1440 >= 15 && (t - m + 1440) % 1440 <= 60,
-    );
+  const mealFits = (t) => fitsMealTime(t, med.meal, meals, med.mealTarget);
   const baseline = preferredTimes(med).map(minuteOf);
   if (med.freq === "in the morning" || med.freq === "at bedtime")
     return baseline.every(mealFits) ? [baseline] : [];
@@ -160,11 +147,7 @@ export function autoResolve(
   });
   if (!Array.isArray(meds) || !meds.length || meds.length > 15)
     return fail(["Enter between 1 and 15 medications."]);
-  if (
-    Object.keys(DEFAULT_MEALS).some(
-      (key) => !Number.isFinite(minuteOf(meals[key])),
-    )
-  )
+  if (!validMeals(meals))
     return fail(["Enter valid breakfast, lunch and dinner times."]);
   const ids = new Set(),
     names = new Set();

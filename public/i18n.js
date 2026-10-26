@@ -1,5 +1,142 @@
 // Interface copy only; care data and parsed values remain in their original language.
 const interfaceCopy = new Map([
+  [
+    "Meal periods",
+    ["Khoảng giờ ăn", "Periodos de comida", "用餐时段", "식사 시간대"],
+  ],
+  [
+    "Make it your day",
+    [
+      "Theo nhịp sống của bạn",
+      "Adapta tu día",
+      "按你的作息安排",
+      "내 일상에 맞추기",
+    ],
+  ],
+  [
+    "Set your meal periods",
+    [
+      "Đặt khoảng giờ ăn",
+      "Configura tus periodos de comida",
+      "设置用餐时段",
+      "식사 시간대 설정",
+    ],
+  ],
+  [
+    "Set meal periods",
+    ["Đặt giờ ăn", "Configurar periodos", "设置用餐时段", "식사 시간대 설정"],
+  ],
+  [
+    "Edit meal periods",
+    [
+      "Sửa khoảng giờ ăn",
+      "Editar periodos de comida",
+      "编辑用餐时段",
+      "식사 시간대 수정",
+    ],
+  ],
+  [
+    "Review meal periods",
+    [
+      "Xem lại giờ ăn",
+      "Revisar periodos de comida",
+      "检查用餐时段",
+      "식사 시간대 검토",
+    ],
+  ],
+  [
+    "Save meal periods",
+    [
+      "Lưu khoảng giờ ăn",
+      "Guardar periodos de comida",
+      "保存用餐时段",
+      "식사 시간대 저장",
+    ],
+  ],
+  [
+    "Save these meal periods?",
+    [
+      "Lưu các khoảng giờ ăn này?",
+      "¿Guardar estos periodos de comida?",
+      "保存这些用餐时段？",
+      "이 식사 시간대를 저장할까요?",
+    ],
+  ],
+  ["Edit times", ["Sửa giờ", "Editar horas", "修改时间", "시간 수정"]],
+  ["Start", ["Bắt đầu", "Inicio", "开始", "시작"]],
+  ["End", ["Kết thúc", "Fin", "结束", "종료"]],
+  [
+    "Meal periods and timing rules",
+    [
+      "Khoảng giờ ăn và quy tắc thời gian",
+      "Periodos de comida y reglas de horario",
+      "用餐时段与时间规则",
+      "식사 시간대 및 시간 규칙",
+    ],
+  ],
+  [
+    "Edit meal periods in About",
+    [
+      "Sửa giờ ăn trong Giới thiệu",
+      "Editar periodos en Acerca de",
+      "在关于中修改用餐时段",
+      "정보에서 식사 시간대 수정",
+    ],
+  ],
+  [
+    "Choose the usual start and end times for breakfast, lunch and dinner.",
+    [
+      "Chọn giờ bắt đầu và kết thúc thường lệ cho bữa sáng, trưa và tối.",
+      "Elige las horas habituales de inicio y fin del desayuno, almuerzo y cena.",
+      "选择早餐、午餐和晚餐通常的开始与结束时间。",
+      "아침, 점심, 저녁의 평소 시작 및 종료 시간을 선택하세요.",
+    ],
+  ],
+  [
+    "After saving, you can edit these in About.",
+    [
+      "Sau khi lưu, bạn có thể sửa trong Giới thiệu.",
+      "Después de guardar, puedes editarlos en Acerca de.",
+      "保存后可在关于中修改。",
+      "저장 후 정보에서 수정할 수 있습니다.",
+    ],
+  ],
+  [
+    "Your daily breakfast, lunch and dinner periods appear on Daily Schedule and are used for food timing.",
+    [
+      "Khoảng giờ ăn sáng, trưa và tối xuất hiện trong Lịch hằng ngày và được dùng cho quy tắc liên quan đến bữa ăn.",
+      "Tus periodos de desayuno, almuerzo y cena aparecen en Horario diario y se usan para las reglas relacionadas con las comidas.",
+      "每日安排会显示早餐、午餐和晚餐时段，并用于与进餐相关的时间规则。",
+      "아침, 점심, 저녁 시간대는 일일 일정에 표시되며 식사 관련 시간 규칙에 사용됩니다.",
+    ],
+  ],
+  [
+    "With food means during a meal period. Before food means 15–60 minutes before its start; after food means 15–60 minutes after its end.",
+    [
+      "Cùng thức ăn nghĩa là trong khoảng giờ ăn. Trước ăn là 15–60 phút trước khi bắt đầu; sau ăn là 15–60 phút sau khi kết thúc.",
+      "Con comida significa durante un periodo de comida. Antes de comer significa 15–60 minutos antes de su inicio; después, 15–60 minutos tras su fin.",
+      "随餐指在用餐时段内；餐前指开始前15–60分钟；餐后指结束后15–60分钟。",
+      "식사와 함께는 식사 시간대 중을 뜻합니다. 식전은 시작 15~60분 전, 식후는 종료 15~60분 후를 뜻합니다.",
+    ],
+  ],
+  [
+    "Review any changes to pending doses before saving. Completed records keep their actual times.",
+    [
+      "Xem lại thay đổi cho các liều đang chờ trước khi lưu. Bản ghi đã hoàn thành giữ nguyên giờ thực tế.",
+      "Revisa los cambios de las dosis pendientes antes de guardar. Los registros completados conservan sus horas reales.",
+      "保存前请检查待完成剂次的时间变动。已完成记录保留实际时间。",
+      "저장 전에 대기 중인 복용 일정 변경을 검토하세요. 완료 기록의 실제 시간은 유지됩니다.",
+    ],
+  ],
+  [
+    "Meal periods saved. You can edit them in About.",
+    [
+      "Đã lưu giờ ăn. Bạn có thể sửa trong Giới thiệu.",
+      "Periodos guardados. Puedes editarlos en Acerca de.",
+      "用餐时段已保存，可在关于中修改。",
+      "식사 시간대가 저장되었습니다. 정보에서 수정할 수 있습니다.",
+    ],
+  ],
   ["Language", ["Ngôn ngữ", "Idioma", "语言", "언어"]],
   [
     "Interface language",

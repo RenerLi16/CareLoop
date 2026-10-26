@@ -108,6 +108,7 @@
           No plan loaded. Start with Read Discharge.
         </p>
         <div class="grid" id="homeStats"></div>
+        <div id="mealSetupCard"></div>
         <div id="homeAlerts"></div>
         <div id="overdueTasks"></div>
         <div class="card hd" id="nextCard" style="display: none">
@@ -237,23 +238,17 @@
             </div>
 
             <details class="small" style="margin-top: 10px">
-              <summary>Meal times</summary>
-              <div class="meal-times">
-                <label
-                  >Breakfast
-                  <input id="meal-breakfast" type="time" value="08:00" /></label
-                ><label
-                  >Lunch
-                  <input id="meal-lunch" type="time" value="12:00" /></label
-                ><label
-                  >Dinner <input id="meal-dinner" type="time" value="18:00"
-                /></label>
-              </div>
+              <summary>Meal periods and timing rules</summary>
+              <div id="reviewMealSummary"></div>
+              <button class="mini" type="button" id="btnReviewMeals">
+                Edit meal periods in About
+              </button>
               <div>
-                With food: within 30 min. Before/after food: 15–60 min. Morning:
-                08:00; bedtime: 22:00. Exact intervals stay exact; other
-                multiple daily doses use daytime slots at least 4h apart. Review
-                these supported timing assumptions against the instructions.
+                With food: during a meal period. Before food: 15–60 min before
+                its start; after food: 15–60 min after its end. Morning: 08:00;
+                bedtime: 22:00. Exact intervals stay exact; other multiple daily
+                doses use daytime slots at least 4h apart. Review these
+                supported timing assumptions against the instructions.
               </div>
             </details>
             <h3
@@ -356,6 +351,16 @@
 
       <section class="panel" id="p-about">
         <h2>About CareLoop</h2>
+
+        <div class="card meal-settings-card" id="aboutMealSettings">
+          <h3>Meal periods</h3>
+          <p class="small">
+            Your daily breakfast, lunch and dinner periods appear on Daily
+            Schedule and are used for food timing.
+          </p>
+          <div id="aboutMealSummary" class="meal-summary"></div>
+          <button class="act" id="btnEditMeals">Edit meal periods</button>
+        </div>
 
         <div class="card">
           <h3 style="font-size: 14px; color: var(--navy); margin: 0 0 6px">

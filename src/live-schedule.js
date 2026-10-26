@@ -1,4 +1,5 @@
 import { spacingRules } from "./scheduler.js";
+import { fitsMealTime } from "./meals.js";
 
 export const taskDue = (task) =>
   task.dueAt ?? new Date(`${task.date}T${task.time}:00`).getTime();
@@ -16,18 +17,7 @@ export function fitsMedicineTime(med, instant, meals) {
     new Date(instant).getHours() * 60 + new Date(instant).getMinutes();
   if (med.freq === "in the morning" && Math.abs(time - 480) > 5) return false;
   if (med.freq === "at bedtime" && Math.abs(time - 1320) > 5) return false;
-  if (med.meal === "any") return true;
-  return Object.entries(meals).some(([name, clock]) => {
-    if (med.mealTarget && med.mealTarget !== "any" && med.mealTarget !== name)
-      return false;
-    const [hours, minutes] = clock.split(":").map(Number);
-    const delta = (time - hours * 60 - minutes + 1440) % 1440;
-    return med.meal === "with"
-      ? Math.min(delta, 1440 - delta) <= 30
-      : med.meal === "before"
-        ? delta >= 1380 && delta <= 1425
-        : delta >= 15 && delta <= 60;
-  });
+  return fitsMealTime(time, med.meal, meals, med.mealTarget);
 }
 
 export function timingStatus(state, task, instant = Date.now()) {

@@ -18,10 +18,12 @@ const withoutImports = (code) =>
     .replace(/^import[\s\S]*?from ['"][^'"]+['"];?\s*/gm, "")
     .replace(/^export /gm, "");
 const bundled = [
+  "src/meals.js",
   "src/scheduler.js",
   "src/instructions.js",
   "src/care-plan.js",
   "src/live-schedule.js",
+  "src/meal-settings.js",
   "src/record.js",
   "src/record-store.js",
   "src/file-protection.js",

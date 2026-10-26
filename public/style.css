@@ -1221,6 +1221,87 @@ header #hdrPat {
   background: #f4f8fd;
   isolation: isolate;
 }
+.meal-settings-card h3 {
+  margin: 0 0 8px;
+  color: var(--navy);
+  font-size: 18px;
+}
+.meal-settings-card p {
+  margin: 8px 0 14px;
+}
+.meal-settings-card {
+  border-left: 4px solid #da897c;
+}
+.meal-eyebrow {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #985e53;
+  margin-bottom: 6px;
+}
+.meal-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  margin: 12px 0 16px;
+}
+.meal-summary-item {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  border-radius: 8px;
+  background: #fff4e7;
+  padding: 6px 9px;
+  color: #714b25;
+  font-size: 12px;
+}
+.meal-period-fields {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.meal-period-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 14px;
+  margin: 18px 0;
+}
+.meal-period-row h3 {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: 15px;
+  color: var(--navy);
+}
+.meal-period-row label {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+.meal-period-row input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.meal-segment {
+  position: absolute;
+  top: 38px;
+  bottom: 0;
+  background: #edb77322;
+  border-inline: 1px dashed #bc8a4b88;
+  pointer-events: none;
+  z-index: 0;
+}
+.meal-segment > span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: center;
+  padding: 7px 2px;
+  color: #805c2e;
+  font-size: 10px;
+  font-weight: 600;
+}
 .medicine-hour {
   position: absolute;
   top: 38px;

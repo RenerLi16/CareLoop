@@ -1,11 +1,11 @@
 import { spacingRules } from "./scheduler.js";
+import { fitsMealTime } from "./meals.js";
 const dateKey = (d) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const clockKey = (d) =>
   `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 const at = (date, time) => new Date(date + "T" + time + ":00").getTime();
 const numericTime = (t) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3));
-const dayDistance = (a, b) => Math.min(Math.abs(a - b), 1440 - Math.abs(a - b));
 export function generatePlanTasks(state, days = 30) {
   if (!state.patient || !state.schedule?.ok) return [];
   const startDay =
@@ -144,22 +144,8 @@ export function validateDatedTasks(plan, tasks, { pendingOnly = false } = {}) {
     const med = meds.get(task.medId);
     if (!med || med.meal === "any" || (pendingOnly && task.status !== "todo"))
       continue;
-    const meals = Object.entries(plan.meals)
-      .filter(
-        ([key]) =>
-          !med.mealTarget || med.mealTarget === "any" || med.mealTarget === key,
-      )
-      .map(([, time]) => numericTime(time));
     const time = numericTime(task.time);
-    const fits = meals.some((meal) =>
-      med.meal === "with"
-        ? dayDistance(time, meal) <= 30
-        : med.meal === "before"
-          ? (meal - time + 1440) % 1440 >= 15 &&
-            (meal - time + 1440) % 1440 <= 60
-          : (time - meal + 1440) % 1440 >= 15 &&
-            (time - meal + 1440) % 1440 <= 60,
-    );
+    const fits = fitsMealTime(time, med.meal, plan.meals, med.mealTarget);
     if (!fits)
       errors.push(
         `${task.date}: ${med.drug} at ${task.time} does not fit its food instruction after the clock change. Review the meal times and original instructions with the care team.`,
